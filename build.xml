@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+
+<project basedir="." default="jar" name="gs_sh-ce">
+
+	<property name="debuglevel" value="source,lines,vars"/>
+	<property name="target" value="1.8"/>
+	<property name="source" value="1.8"/>
+	<property environment="env"/>
+
+	<path id="classpath">
+		<fileset dir="lib">
+			<include name="*.jar"/>
+		</fileset>
+		<fileset dir="common/lib">
+			<include name="*.jar"/>
+		</fileset>
+		<pathelement location="common/build/classes"/>
+	</path>
+
+	<target name="init">
+		<mkdir dir="build/classes"/>
+		<mkdir dir="release"/>
+	</target>
+
+	<target name="clean">
+		<delete dir="build"/>
+		<delete dir="release"/>
+		<subant buildpath="common" target="clean"/>
+	</target>
+
+	<target name="compile" depends="init">
+		<echo message="${ant.project.name}: ${ant.file}"/>
+		<subant buildpath="common" target="compile"/>
+		<javac debug="true" debuglevel="${debuglevel}" destdir="build/classes"
+				includeantruntime="false" source="${source}" target="${target}" encoding="UTF-8">
+			<src path="src"/>
+			<classpath refid="classpath"/>
+		</javac>
+		<copy includeemptydirs="false" todir="build/classes">
+			<fileset dir="src">
+				<exclude name="**/*.launch"/>
+				<exclude name="**/.svn"/>
+				<exclude name="**/*.java"/>
+			</fileset>
+		</copy>
+	</target>
+
+	<target name="jar" depends="compile">
+		<jar destfile="release/griddb-cli.jar">
+			<fileset dir="build/classes"/>
+			<fileset dir="common/build/classes"/>
+			<manifest>
+				<attribute name="Main-Class" value="com.toshiba.mwcloud.gs.tools.shell.GridStoreShell"/>
+<!--
+				<attribute name="Class-Path" value="${runtime.classpath}"/>
+-->
+			</manifest>
+		</jar>
+	</target>
+
+</project>
