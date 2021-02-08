@@ -1,0 +1,3 @@
+com.toshiba.mwcloud.gs.tools.shell.commands.BasicCommandClass
+com.toshiba.mwcloud.gs.tools.shell.commands.ClusterCommandClass
+com.toshiba.mwcloud.gs.tools.shell.commands.DataCommandClass
