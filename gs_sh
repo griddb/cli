@@ -1,0 +1,51 @@
+#!/bin/sh
+#
+# gs_sh CE V4.6.0
+#   Copyright (c) 2021 Toshiba Digital Solutions Corporation.
+#   Licensed under the Apache License, Version 2.0 (the "License");
+#   you may not use this file except in compliance with the License.
+#   You may obtain a copy of the License at
+#       http://www.apache.org/licenses/LICENSE-2.0
+#   Unless required by applicable law or agreed to in writing, software
+#   distributed under the License is distributed on an "AS IS" BASIS,
+#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#   See the License for the specific language governing permissions and
+#   limitations under the License.
+#
+
+if [ ! -e /usr/share/java/gridstore.jar ]; then
+	echo "gs_sh error!"
+	echo "Required libraries (gridstore.jar) is not installed."
+	exit 1
+fi
+
+umask 0002
+
+CP=.
+CP=$CP:/usr/gridstore/prop
+CP=$CP:/usr/share/java/gridstore.jar
+CP=$CP:/usr/share/java/gridstore-jdbc.jar
+CP=$CP:/usr/share/java/griddb-cli.jar
+CP=$CP:/usr/gridstore/lib/commons-cli-1.2.jar
+CP=$CP:/usr/gridstore/lib/commons-io-2.4.jar
+CP=$CP:/usr/gridstore/lib/jackson-annotations-2.2.3.jar
+CP=$CP:/usr/gridstore/lib/jackson-core-2.2.3.jar
+CP=$CP:/usr/gridstore/lib/jackson-databind-2.2.3.jar
+CP=$CP:/usr/gridstore/lib/javax.json-1.0.jar
+CP=$CP:/usr/gridstore/lib/jersey-client-1.17.1.jar
+CP=$CP:/usr/gridstore/lib/jersey-core-1.17.1.jar
+CP=$CP:/usr/gridstore/lib/jline-3.17.1.jar
+CP=$CP:/usr/gridstore/lib/logback-classic-1.0.13.jar
+CP=$CP:/usr/gridstore/lib/logback-core-1.0.13.jar
+CP=$CP:/usr/gridstore/lib/opencsv-3.9.jar
+CP=$CP:/usr/gridstore/lib/commons-lang3-3.5.jar
+CP=$CP:/usr/gridstore/lib/commons-beanutils-1.9.3.jar
+CP=$CP:/usr/gridstore/lib/commons-collections-3.2.2.jar
+CP=$CP:/usr/gridstore/lib/commons-logging-1.2.jar
+CP=$CP:/usr/gridstore/lib/orion-ssh2-214.jar
+CP=$CP:/usr/gridstore/lib/slf4j-api-1.7.5.jar
+
+java -Xmx1024m \
+	-Dlogback.configurationFile=/usr/gridstore/prop/gs_sh_logback.xml \
+	-classpath "$CP:$CLASSPATH" \
+	com.toshiba.mwcloud.gs.tools.shell.GridStoreShell $*
