@@ -41,6 +41,39 @@ and the following file is created under `release/` folder.
     gs> version
     gs_sh-ce version 4.6.0
 
+## Install
+
+```
+(CentOS)
+$ rpm -ivh griddb-X.X.X-linux.x86_64.rpm
+$ rpm -ivh griddb-ce-cli-X.X.X-linux.x86_64.rpm
+$ ln -sf gridstore-jdbc-X.X.X.jar /usr/share/java/gridstore-jdbc.jar
+$ gs_sh
+gs> version
+gs_sh-ce version 4.6.0
+
+(openSuSe Leap)
+$ rpm -ivh griddb-X.X.X-opensuse.x86_64.rpm
+$ rpm -ivh griddb-cli-X.X.X-{release}-opensuse.rpm
+$ ln -sf gridstore-jdbc-X.X.X.jar /usr/share/java/gridstore-jdbc.jar
+$ gs_sh
+gs> version
+gs_sh-ce version 4.6.0
+
+(Ubuntu)
+$ dpkg -i griddb_x.x.x_amd64.deb
+$ dpkg -i griddb-cli_X.X.X_amd64.deb
+$ gs_sh
+gs> version
+gs_sh-ce version 4.6.0
+
+Note: - X.X.X is the GridDB version.
+      - {release} is the GridDB release version.
+```
+
+- Note: 
+  - We can download the last version of `griddb-X.X.X-linux.x86_64.rpm`, `griddb_x.x.x_amd64.deb`, `griddb-x.x.x-opensuse.x86_64.rpm` at https://github.com/griddb/griddb/releases/ and the latest version of `gridstore-jdbc-X.X.X.jar` from [Maven Repository](https://search.maven.org/search?q=a:gridstore-jdbc).
+
 ## Document
 
   Refer to the file below for more detailed information.  
