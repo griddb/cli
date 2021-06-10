@@ -1,3 +1,4 @@
+<img src="https://griddb.org/brand-resources/griddb-logo/png/color.png" align="center" height="240" alt="GridDB"/>
 # GridDB CLI
 
 ## Overview
