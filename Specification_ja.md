@@ -1,3 +1,5 @@
+<img src="https://griddb.org/brand-resources/griddb-logo/png/color.png" align="center" height="240" alt="GridDB"/>
+
 # クラスタ運用管理コマンド・インタプリタ(gs_sh)
 
 ## 概要
