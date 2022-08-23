@@ -57,6 +57,31 @@ and the following file is created under `release/` folder.
     gs> version
     gs_sh-ce version 5.0.0
 
+## Quick start from CLI Package
+
+
+```
+(CentOS)
+$ rpm -ivh griddb-X.X.X-linux.x86_64.rpm
+$ rpm -ivh griddb-ce-cli-X.X.X-linux.x86_64.rpm
+$ gs_sh
+gs> version
+gs_sh-ce version 5.0.0
+
+(Ubuntu)
+$ dpkg -i griddb_x.x.x_amd64.deb
+$ dpkg -i griddb-cli_X.X.X_amd64.deb
+$ gs_sh
+gs> version
+gs_sh-ce version 5.0.0
+
+Note: - X.X.X is the GridDB version.
+      - {release} is the GridDB release version.
+```
+
+- Note: 
+  - We can download the last version of `griddb-X.X.X-linux.x86_64.rpm`, `griddb_x.x.x_amd64.deb` at https://github.com/griddb/griddb/releases/ .
+
 ## Document
 
   Refer to the file below for more detailed information.  
