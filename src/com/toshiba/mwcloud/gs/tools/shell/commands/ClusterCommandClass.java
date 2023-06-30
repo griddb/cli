@@ -110,7 +110,7 @@ public class ClusterCommandClass extends AbstractCommandClass {
    * @see GridStoreCommandUtils#joinCluster
    * @see ScriptContext
    */
-  @GSCommand(hidden = true)
+  @GSCommand
   public void joinCluster(ShellCluster cluster, ShellNode node, @GSNullable Integer waitSeconds)
       throws GridStoreCommandException {
     String userId = (String) getContext().getAttribute(GridStoreShell.USER);
@@ -118,7 +118,7 @@ public class ClusterCommandClass extends AbstractCommandClass {
     checkUserIdAndPassword(userId, password);
     checkClusterNode(cluster);
     int waitSecondsVal = getWaitTime(waitSeconds);
-    if (isSystemSSL(getContext())) {
+    if (isSystemSSL()) {
       node.setSystemSSL(true);
     }
     Watcher watcher = GridStoreCommandUtils.joinCluster(cluster, node, userId, password);
@@ -160,7 +160,7 @@ public class ClusterCommandClass extends AbstractCommandClass {
    * @see GridStoreCommandUtils#appendCluster
    * @see ScriptContext
    */
-  @GSCommand(hidden = true)
+  @GSCommand
   public void appendCluster(ShellCluster cluster, ShellNode node, @GSNullable Integer waitSeconds)
       throws GridStoreCommandException {
     String userId = (String) getContext().getAttribute(GridStoreShell.USER);
@@ -169,7 +169,7 @@ public class ClusterCommandClass extends AbstractCommandClass {
     checkClusterNode(cluster);
     int waitSecondsVal = getWaitTime(waitSeconds);
 
-    if (isSystemSSL(getContext())) {
+    if (isSystemSSL()) {
       node.setSystemSSL(true);
     }
     Watcher watcher = GridStoreCommandUtils.appendCluster(cluster, node, userId, password);
@@ -214,7 +214,7 @@ public class ClusterCommandClass extends AbstractCommandClass {
    * @see GridStoreCommandUtils#startCluster
    * @see ScriptContext
    */
-  @GSCommand(hidden = true)
+  @GSCommand
   public void startCluster(ShellCluster cluster, @GSNullable Integer waitSeconds)
       throws GridStoreCommandException {
     String userId = (String) getContext().getAttribute(GridStoreShell.USER);
@@ -222,7 +222,7 @@ public class ClusterCommandClass extends AbstractCommandClass {
     checkUserIdAndPassword(userId, password);
     checkClusterNode(cluster);
     int waitSecondsVal = getWaitTime(waitSeconds);
-    if (isSystemSSL(getContext())) {
+    if (isSystemSSL()) {
       cluster.setSystemSSL(true);
     }
     List<Watcher> watchers =
@@ -273,7 +273,7 @@ public class ClusterCommandClass extends AbstractCommandClass {
    * @see GridStoreCommandUtils#startNode
    * @see ScriptContext
    */
-  @GSCommand(hidden = true)
+  @GSCommand
   public void startNode(ShellNode[] nodes, @GSNullable Integer waitSeconds) {
     final String userId = (String) getContext().getAttribute(GridStoreShell.USER);
     final String password = (String) getContext().getAttribute(GridStoreShell.PASSWORD);
@@ -295,8 +295,8 @@ public class ClusterCommandClass extends AbstractCommandClass {
                   public Watcher call() throws Exception {
                     try {
                       println(
-                          getMessage("message.nodeStarting", node.getName()));
-                      if (isSystemSSL(getContext())) {
+                          getMessage("message.nodeStarting", node.getName())); // ノード {0} を起動します。
+                      if (isSystemSSL()) {
                         node.setSystemSSL(true);
                       }
                       Watcher watcher =
@@ -362,7 +362,7 @@ public class ClusterCommandClass extends AbstractCommandClass {
     for (ShellNode node : nodes) {
       try {
         println(getMessage("message.nodeStopping", node.getName()));
-        if (isSystemSSL(getContext())) {
+        if (isSystemSSL()) {
           node.setSystemSSL(true);
         }
         watchers.add(GridStoreCommandUtils.stopNode(node, userId, password, force));
@@ -421,7 +421,7 @@ public class ClusterCommandClass extends AbstractCommandClass {
    * @see GridStoreCommandUtils#stopNode
    * @see ScriptContext
    */
-  @GSCommand(hidden = true)
+  @GSCommand
   public void stopNode(ShellNode[] nodes, @GSNullable Integer waitSeconds)
       throws GridStoreCommandException {
     stopNodeImpl(nodes, waitSeconds, false);
@@ -451,7 +451,7 @@ public class ClusterCommandClass extends AbstractCommandClass {
    * @see GridStoreCommandUtils#stopNode
    * @see ScriptContext
    */
-  @GSCommand(hidden = true)
+  @GSCommand
   public void stopNodeForce(ShellNode[] nodes, @GSNullable Integer waitSeconds)
       throws GridStoreCommandException {
     stopNodeImpl(nodes, waitSeconds, true);
@@ -474,7 +474,7 @@ public class ClusterCommandClass extends AbstractCommandClass {
    * @see GridStoreCommandUtils#stopCluster
    * @see ScriptContext
    */
-  @GSCommand(hidden = true)
+  @GSCommand
   public void stopCluster(ShellCluster cluster, @GSNullable Integer waitSeconds)
       throws GridStoreCommandException {
     String userId = (String) getContext().getAttribute(GridStoreShell.USER);
@@ -483,7 +483,7 @@ public class ClusterCommandClass extends AbstractCommandClass {
     checkClusterNode(cluster);
     int waitSecondsVal = getWaitTime(waitSeconds);
 
-    if (isSystemSSL(getContext())) {
+    if (isSystemSSL()) {
       cluster.setSystemSSL(true);
     }
     List<Watcher> watchers = GridStoreCommandUtils.stopCluster(cluster, userId, password);
@@ -517,7 +517,7 @@ public class ClusterCommandClass extends AbstractCommandClass {
    * @see GridStoreCommandUtils#leaveCluster
    * @see ScriptContext
    */
-  @GSCommand(hidden = true)
+  @GSCommand
   public void leaveCluster(GSNode node, @GSNullable Integer waitSeconds)
       throws GridStoreCommandException {
     leaveClusterImpl(node, waitSeconds, false);
@@ -535,7 +535,7 @@ public class ClusterCommandClass extends AbstractCommandClass {
    * @see GridStoreCommandUtils#leaveCluster
    * @see ScriptContext
    */
-  @GSCommand(hidden = true)
+  @GSCommand
   public void leaveClusterForce(GSNode node, @GSNullable Integer waitSeconds)
       throws GridStoreCommandException {
     leaveClusterImpl(node, waitSeconds, true);
@@ -547,7 +547,7 @@ public class ClusterCommandClass extends AbstractCommandClass {
     String password = (String) getContext().getAttribute(GridStoreShell.PASSWORD);
     checkUserIdAndPassword(userId, password);
     int waitSecondsVal = getWaitTime(waitSeconds);
-    if (isSystemSSL(getContext())) {
+    if (isSystemSSL()) {
       node.setSystemSSL(true);
     }
     Watcher watcher = GridStoreCommandUtils.leaveCluster(node, userId, password, force);
@@ -579,12 +579,12 @@ public class ClusterCommandClass extends AbstractCommandClass {
    * @see GridStoreCommandUtils#getStat
    * @see ScriptContext
    */
-  @GSCommand(hidden = true, name = "stat")
+  @GSCommand(name = "stat")
   public JsonNode getStat(GSNode node) throws GridStoreCommandException {
     String userId = (String) getContext().getAttribute(GridStoreShell.USER);
     String password = (String) getContext().getAttribute(GridStoreShell.PASSWORD);
     checkUserIdAndPassword(userId, password);
-    if (isSystemSSL(getContext())) {
+    if (isSystemSSL()) {
       node.setSystemSSL(true);
     }
     JsonNode stat = GridStoreCommandUtils.getStat(node, userId, password);
@@ -604,13 +604,13 @@ public class ClusterCommandClass extends AbstractCommandClass {
    * @see GridStoreCommandUtils#getStatCluster
    * @see ScriptContext
    */
-  @GSCommand(hidden = true)
+  @GSCommand
   public String configcluster(ShellCluster cluster) throws GridStoreCommandException {
     String userId = (String) getContext().getAttribute(GridStoreShell.USER);
     String password = (String) getContext().getAttribute(GridStoreShell.PASSWORD);
     checkUserIdAndPassword(userId, password);
 
-    if (isSystemSSL(getContext())) {
+    if (isSystemSSL()) {
       cluster.setSystemSSL(true);
     }
     final boolean result = GridStoreCommandUtils.getStatCluster(cluster, userId, password);
@@ -708,12 +708,12 @@ public class ClusterCommandClass extends AbstractCommandClass {
    * @see GridStoreCommandUtils#getConfig
    * @see ScriptContext
    */
-  @GSCommand(hidden = true, name = "config")
+  @GSCommand(name = "config")
   public JsonNode getConfig(GSNode node) throws GridStoreCommandException {
     String userId = (String) getContext().getAttribute(GridStoreShell.USER);
     String password = (String) getContext().getAttribute(GridStoreShell.PASSWORD);
     checkUserIdAndPassword(userId, password);
-    if (isSystemSSL(getContext())) {
+    if (isSystemSSL()) {
       node.setSystemSSL(true);
     }
     return GridStoreCommandUtils.getConfig(node, userId, password);
@@ -730,12 +730,12 @@ public class ClusterCommandClass extends AbstractCommandClass {
    * @see GridStoreCommandUtils#getLogs
    * @see ScriptContext
    */
-  @GSCommand(hidden = true, name = "logs")
+  @GSCommand(name = "logs")
   public String[] getLogs(GSNode node) throws GridStoreCommandException {
     String userId = (String) getContext().getAttribute(GridStoreShell.USER);
     String password = (String) getContext().getAttribute(GridStoreShell.PASSWORD);
     checkUserIdAndPassword(userId, password);
-    if (isSystemSSL(getContext())) {
+    if (isSystemSSL()) {
       node.setSystemSSL(true);
     }
     return GridStoreCommandUtils.getLogs(node, userId, password);
@@ -756,14 +756,14 @@ public class ClusterCommandClass extends AbstractCommandClass {
    * @see GridStoreCommandUtils#setLogConf
    * @see ScriptContext
    */
-  @GSCommand(hidden = true, name = "logconf")
+  @GSCommand(name = "logconf")
   public Map<String, String> getLogConf(
       GSNode node, @GSNullable String category, @GSNullable String level)
       throws GridStoreCommandException {
     String userId = (String) getContext().getAttribute(GridStoreShell.USER);
     String password = (String) getContext().getAttribute(GridStoreShell.PASSWORD);
     checkUserIdAndPassword(userId, password);
-    if (isSystemSSL(getContext())) {
+    if (isSystemSSL()) {
       node.setSystemSSL(true);
     }
     if (category == null) {
@@ -833,7 +833,7 @@ public class ClusterCommandClass extends AbstractCommandClass {
     checkVarName(clusterVar);
     checkVarName(nodePrefixVar);
     GSNode node = new GSNode(address, restPort);
-    if (isSystemSSL(getContext())) {
+    if (isSystemSSL()) {
       node.setSystemSSL(true);
     }
     try {
@@ -852,7 +852,7 @@ public class ClusterCommandClass extends AbstractCommandClass {
       String clusterName = GridStoreCommandUtils.getClusterName(nodeStatus);
       String masterNodeAddress = getMasterNodeAddress(nodeStatus);
       GSNode nodeMaster = new GSNode(masterNodeAddress, restPort);
-      if (isSystemSSL(getContext())) {
+      if (isSystemSSL()) {
         nodeMaster.setSystemSSL(true);
       }
       JsonNode statusMaster = GridStoreCommandUtils.getStat(nodeMaster, userId, password);
@@ -1058,8 +1058,15 @@ public class ClusterCommandClass extends AbstractCommandClass {
     }
   }
 
-  private boolean isSystemSSL(ScriptContext context) {
-    Object object = context.getAttribute(GridStoreShell.SYSTEM_SSL);
-    return object != null ? (Boolean) object : false;
+  private boolean isSystemSSL() {
+    String sslMode = (String) getContext().getAttribute(GridStoreShell.SSL_MODE);
+    if (sslMode == null) {
+      return false;
+    }
+    if (sslMode.equals(BasicCommandClass.SslMode.DISABLED.toString())) {
+      return false;
+    } else {
+      return true;
+    }
   }
 }

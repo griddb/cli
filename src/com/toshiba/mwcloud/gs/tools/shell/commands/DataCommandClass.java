@@ -13,46 +13,6 @@
 
 package com.toshiba.mwcloud.gs.tools.shell.commands;
 
-import java.io.BufferedWriter;
-import java.io.Closeable;
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.OutputStreamWriter;
-import java.net.URLEncoder;
-import java.nio.charset.Charset;
-import java.sql.Blob;
-import java.sql.Connection;
-import java.sql.DatabaseMetaData;
-import java.sql.DriverManager;
-import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
-import java.sql.SQLException;
-import java.sql.Statement;
-import java.text.ParseException;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.Date;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Properties;
-import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
-import javax.script.ScriptContext;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -68,6 +28,7 @@ import com.toshiba.mwcloud.gs.ContainerInfo;
 import com.toshiba.mwcloud.gs.ContainerType;
 import com.toshiba.mwcloud.gs.FetchOption;
 import com.toshiba.mwcloud.gs.GSException;
+import com.toshiba.mwcloud.gs.GSType;
 import com.toshiba.mwcloud.gs.GridStore;
 import com.toshiba.mwcloud.gs.GridStoreFactory;
 import com.toshiba.mwcloud.gs.IndexInfo;
@@ -79,8 +40,15 @@ import com.toshiba.mwcloud.gs.Row;
 import com.toshiba.mwcloud.gs.Row.Key;
 import com.toshiba.mwcloud.gs.RowSet;
 import com.toshiba.mwcloud.gs.TimeSeriesProperties;
+import com.toshiba.mwcloud.gs.TimeUnit;
 import com.toshiba.mwcloud.gs.TimestampUtils;
 import com.toshiba.mwcloud.gs.TriggerInfo;
+import com.toshiba.mwcloud.gs.experimental.ContainerAttribute;
+import com.toshiba.mwcloud.gs.experimental.DatabaseInfo;
+import com.toshiba.mwcloud.gs.experimental.ExperimentalTool;
+import com.toshiba.mwcloud.gs.experimental.ExtendedContainerInfo;
+import com.toshiba.mwcloud.gs.experimental.PrivilegeInfo;
+import com.toshiba.mwcloud.gs.experimental.UserInfo;
 import com.toshiba.mwcloud.gs.tools.common.GSNode;
 import com.toshiba.mwcloud.gs.tools.common.GridDBJdbcUtils;
 import com.toshiba.mwcloud.gs.tools.common.GridStoreCommandException;
@@ -100,6 +68,47 @@ import com.toshiba.mwcloud.gs.tools.shell.ShellCluster;
 import com.toshiba.mwcloud.gs.tools.shell.ShellException;
 import com.toshiba.mwcloud.gs.tools.shell.annotation.GSCommand;
 import com.toshiba.mwcloud.gs.tools.shell.annotation.GSNullable;
+import java.io.BufferedWriter;
+import java.io.Closeable;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.net.URLEncoder;
+import java.nio.charset.Charset;
+import java.sql.Blob;
+import java.sql.Connection;
+import java.sql.DatabaseMetaData;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.sql.Timestamp;
+import java.text.ParseException;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import javax.script.ScriptContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Data command class contains some commands to execute data operation. */
 public class DataCommandClass extends AbstractCommandClass {
@@ -111,6 +120,7 @@ public class DataCommandClass extends AbstractCommandClass {
   private static final String BLOB_SHOW_STRING = "(BLOB)";
 
   private static final String GS_NULL_STDOUT_DEFAULT = "(NULL)";
+  private static final String GS_NULL_CSV_DEFAULT = null;
 
   private static final String GS_LOGIN_TIMEOUT_DEFAULT = "15";
   private static final String GS_TQL_FETCH_MODE_DEFAULT = "SIZE";
@@ -123,6 +133,8 @@ public class DataCommandClass extends AbstractCommandClass {
   private static final String PROP_NOTIFICATION_INTERFACE_ADDRESS = "notificationInterfaceAddress";
   private static final String PROP_SSL_MODE = "sslMode";
   private static final String DOT_CHARACTER = ".";
+  private static final String TYPE_GENERAL_USER = "General User";
+  private static final String TYPE_ROLE = "Role";
   /** The operator in sub-command {@code setauthentication}. */
   public enum AuthenticationMethods {
     LDAP,
@@ -221,21 +233,35 @@ public class DataCommandClass extends AbstractCommandClass {
     }
   }
 
-  //  private void checkSuperUser() {
-  //    try {
-  //      UserInfo userInfo = ExperimentalTool.getCurrentUser(gridStore);
-  //      if (!userInfo.isSuperUser()) {
-  //        throw new ShellException(getMessage("error.notSuperUser"));
-  //      }
-  //    } catch (GSException e) {
-  //      throw new ShellException(
-  //          getMessage("error.checkSuperUser") + " :msg=[" + e.getMessage() + "]", e);
-  //    }
-  //  }
+  private void checkSuperUser() {
+    try {
+      UserInfo userInfo = ExperimentalTool.getCurrentUser(gridStore);
+      if (!userInfo.isSuperUser()) {
+        throw new ShellException(getMessage("error.notSuperUser"));
+      }
+    } catch (GSException e) {
+      throw new ShellException(
+          getMessage("error.checkSuperUser") + " :msg=[" + e.getMessage() + "]", e);
+    }
+  }
 
   private void checkColumnNameMultipleValues(String[] columnNames) {
     if (columnNames == null || columnNames.length < 2) {
       throw new IllegalArgumentException(getMessage("error.columnNamesMultiple"));
+    }
+  }
+
+  /**
+   * 通常モードでの実行かを確認します.
+   *
+   * @return true:通常モード / false:メンテナンスモード
+   */
+  private boolean isNormalMode() {
+    Object mode = getContext().getAttribute(GridStoreShell.MAINTENANCE_MODE);
+    if (mode == null) {
+      return true;
+    } else {
+      return ((GridStoreShell.EXEC_MODE) mode == GridStoreShell.EXEC_MODE.NORMAL) ? true : false;
     }
   }
 
@@ -552,7 +578,9 @@ public class DataCommandClass extends AbstractCommandClass {
     if (sslMode != null) {
       prop.setProperty(PROP_SSL_MODE, sslMode);
     } else {
-      prop.setProperty(PROP_SSL_MODE, BasicCommandClass.SSL_MODE[1]);
+      prop.setProperty(PROP_SSL_MODE, BasicCommandClass.SslMode.DISABLED.getValue());
+      /* CE version: 145005:JC_ILLEGAL_PROPERTY_ENTRY] Unacceptable property specified because of lack of extra library (key=sslMode) */
+      prop.remove(PROP_SSL_MODE);
     }
   }
   /**
@@ -679,6 +707,256 @@ public class DataCommandClass extends AbstractCommandClass {
   }
 
   /**
+   * The main method for sub-command {@code createdatabase}.<br>
+   * Create a database. Need to run with administrator user.
+   *
+   * @param dbName database name
+   * @throws ShellException if it meets 1 of the following conditions:
+   *     <ul>
+   *       <li>The connection is closed
+   *       <li>Current user is not an administrator
+   *       <li>Database already existed
+   *       <li>Error while checking user information
+   *       <li>Unable to create database
+   *     </ul>
+   *
+   * @see ExperimentalTool#putDatabase
+   */
+  @GSCommand
+  public void createDatabase(String dbName) {
+    checkConnected();
+    checkSuperUser();
+
+    try {
+      if (existsDatabase(dbName)) {
+        throw new ShellException(getMessage("error.dbAlreadyExists", dbName));
+      }
+
+      DatabaseInfo dbInfo = new DatabaseInfo();
+      dbInfo.setName(dbName);
+      ExperimentalTool.putDatabase(gridStore, dbName, dbInfo, false);
+
+    } catch (GSException e) {
+      throw new ShellException(getMessage("error.createDb") + " : msg=[" + e.getMessage() + "]", e);
+    }
+  }
+
+  /**
+   * The main method for sub-command {@code dropdatabase}.<br>
+   * Delete the database. Need to run with administrator user.
+   *
+   * @param dbName database name
+   * @throws ShellException if it meets 1 of the following conditions:
+   *     <ul>
+   *       <li>The connection is closed
+   *       <li>Current user is not an administrator
+   *       <li>Error while checking user information
+   *       <li>Database is not found
+   *       <li>Database is still connected
+   *       <li>Unable to drop database
+   *     </ul>
+   *
+   * @see ExperimentalTool#dropDatabase
+   * @see ScriptContext
+   */
+  @GSCommand
+  public void dropDatabase(String dbName) {
+    checkConnected();
+    checkSuperUser();
+
+    try {
+      if (!existsDatabase(dbName)) {
+        throw new ShellException(getMessage("error.dbNotFound", dbName));
+      }
+
+      // 自分が接続しているDBは削除できない (サーバの仕様とは逆だが、外部仕様的にはこちらの方が分かりやすい)
+      if (dbName.equalsIgnoreCase(m_dbName)) {
+        throw new ShellException(getMessage("error.dropDb2", dbName));
+      }
+
+      // 削除対象のDBに移動
+      final String oldDbName = m_dbName;
+      // V4.3 タイムゾーン設定値を退避
+      final String oldTimeZoneVal = (String) getContext().getAttribute(GridStoreShell.TIMEZONE);
+      String oldConnectTimeZoneVal = m_connectTimeZoneVal;
+      connectNoSQL(m_cluster, dbName);
+
+      ExperimentalTool.dropDatabase(gridStore, dbName);
+
+      // 元のDBに戻る
+      // V4.3 退避していたタイムゾーン設定値で元のDBに接続
+      if (oldConnectTimeZoneVal != null) {
+        getContext()
+            .setAttribute(
+                GridStoreShell.TIMEZONE, oldConnectTimeZoneVal, ScriptContext.ENGINE_SCOPE);
+      } else {
+        getContext().removeAttribute(GridStoreShell.TIMEZONE, ScriptContext.ENGINE_SCOPE);
+      }
+      connectNoSQL(m_cluster, oldDbName);
+      // V4.3 退避していたタイムゾーン設定値を復帰させる
+      if (oldTimeZoneVal != null) {
+        getContext()
+            .setAttribute(GridStoreShell.TIMEZONE, oldTimeZoneVal, ScriptContext.ENGINE_SCOPE);
+      } else {
+        getContext().removeAttribute(GridStoreShell.TIMEZONE, ScriptContext.ENGINE_SCOPE);
+      }
+
+    } catch (GSException e) {
+      throw new ShellException(getMessage("error.dropDb") + " : msg=[" + e.getMessage() + "]", e);
+    }
+  }
+
+  /**
+   * The main method for sub-command {@code showdatabase}.<br>
+   * Displays database information.
+   *
+   * @param dbName database name
+   * @throws ShellException if it meets 1 of below conditions:
+   *     <ul>
+   *       <li>The connection is closed
+   *       <li>Database not existed
+   *       <li>Error while providing database information
+   *     </ul>
+   *
+   * @see ExperimentalTool#getDatabases
+   */
+  @GSCommand
+  public void showDatabase(@GSNullable String dbName) {
+    checkConnected();
+
+    try {
+      Map<String, DatabaseInfo> dbList = ExperimentalTool.getDatabases(gridStore);
+
+      // DB名ソート用Comparator
+      Comparator<Map.Entry<String, DatabaseInfo>> comparator =
+          new Comparator<Map.Entry<String, DatabaseInfo>>() {
+            @Override
+            public int compare(
+                Map.Entry<String, DatabaseInfo> o1, Map.Entry<String, DatabaseInfo> o2) {
+              String name1 = o1.getKey();
+              String name2 = o2.getKey();
+              return stringCompare(name1, name2);
+            }
+          };
+      // ユーザ名ソート用Comparator
+      Comparator<Map.Entry<String, PrivilegeInfo>> usercomparator =
+          new Comparator<Map.Entry<String, PrivilegeInfo>>() {
+            @Override
+            public int compare(
+                Map.Entry<String, PrivilegeInfo> o1, Map.Entry<String, PrivilegeInfo> o2) {
+              String user1 = o1.getKey();
+              String user2 = o2.getKey();
+              return stringCompare(user1, user2);
+            }
+          };
+
+      if (dbName == null) {
+        // 一覧表示
+        // V4.3 表示フォーマット変更 権限を表示
+        println("Name             ACL");
+        println("---------------------------------");
+        printfln("%-15s  %-10s", ToolConstants.PUBLIC_DB, "ALL_USER");
+
+        List<Map.Entry<String, DatabaseInfo>> dbEntryList =
+            new ArrayList<Map.Entry<String, DatabaseInfo>>();
+        for (Map.Entry<String, DatabaseInfo> e : dbList.entrySet()) {
+          dbEntryList.add(e);
+        }
+        // DB名でソート
+        Collections.sort(dbEntryList, comparator);
+
+        for (Map.Entry<String, DatabaseInfo> e : dbEntryList) {
+          // DB名
+          String name = e.getKey();
+          DatabaseInfo info = e.getValue();
+          Map<String, PrivilegeInfo> aclList = info.getPrivileges();
+
+          List<Map.Entry<String, PrivilegeInfo>> aclEntlyList =
+              new ArrayList<Map.Entry<String, PrivilegeInfo>>();
+          for (Map.Entry<String, PrivilegeInfo> aclEntry : aclList.entrySet()) {
+            aclEntlyList.add(aclEntry);
+          }
+          // ユーザ名でソート
+          Collections.sort(aclEntlyList, usercomparator);
+
+          if (aclEntlyList.size() > 0) {
+            // データベースに対しアクセス権を付与されたユーザが存在する場合
+            for (Map.Entry<String, PrivilegeInfo> aclEntry : aclEntlyList) {
+              // ユーザ名
+              String user = aclEntry.getKey();
+              // 権限
+              String role = "";
+              PrivilegeInfo privilegeInfo = aclEntry.getValue();
+              if (privilegeInfo != null) {
+                role = privilegeInfo.getRole().toString();
+              }
+              printfln("%-15s  %-10s  %s", name, user, role);
+            }
+          } else {
+            // データベースに対しアクセス権を付与されたユーザが存在しない場合
+            printfln("%-15s  %-10s  %s", name, "", "");
+          }
+        }
+
+      } else {
+        // 詳細表示 (V2.7では、一覧表示と同等の表示のみ）
+        // [memo] DB名は大文字小文字の区別なし
+        dbList.put(ToolConstants.PUBLIC_DB, new DatabaseInfo());
+        DatabaseInfo info = null;
+        for (Map.Entry<String, DatabaseInfo> entry : dbList.entrySet()) {
+          if (dbName.equalsIgnoreCase(entry.getKey())) {
+            info = entry.getValue();
+            break;
+          }
+        }
+        if (info == null) {
+          throw new ShellException(getMessage("error.dbNotFound", dbName));
+
+        } else {
+          // V4.3 表示フォーマット変更 権限を表示
+          println("Name             ACL");
+          println("---------------------------------");
+
+          if (dbName.equalsIgnoreCase(ToolConstants.PUBLIC_DB)) {
+            printfln("%-15s  %-10s", ToolConstants.PUBLIC_DB, "ALL_USER");
+            return;
+          }
+
+          Map<String, PrivilegeInfo> aclList = info.getPrivileges();
+
+          List<Map.Entry<String, PrivilegeInfo>> aclEntlyList =
+              new ArrayList<Map.Entry<String, PrivilegeInfo>>();
+          for (Map.Entry<String, PrivilegeInfo> aclEntry : aclList.entrySet()) {
+            aclEntlyList.add(aclEntry);
+          }
+          // ユーザ名でソート
+          Collections.sort(aclEntlyList, usercomparator);
+
+          if (aclEntlyList.size() > 0) {
+            // データベースに対しアクセス権を付与されたユーザが存在する場合
+            for (Map.Entry<String, PrivilegeInfo> aclEntry : aclEntlyList) {
+              // ユーザ名
+              String user = aclEntry.getKey();
+              // 権限
+              String role = "";
+              PrivilegeInfo privilegeInfo = aclEntry.getValue();
+              if (privilegeInfo != null) {
+                role = privilegeInfo.getRole().toString();
+              }
+              printfln("%-15s  %-10s  %s", info.getName(), user, role);
+            }
+          } else {
+            // データベースに対しアクセス権を付与されたユーザが存在しない場合
+            printfln("%-15s  %-10s  %s", info.getName(), "", "");
+          }
+        }
+      }
+    } catch (GSException e) {
+      throw new ShellException(getMessage("error.showDb") + " : msg=[" + e.getMessage() + "]", e);
+    }
+  }
+
+  /**
    * Compare 2 strings.
    *
    * @param s1 string to compare
@@ -696,6 +974,495 @@ public class DataCommandClass extends AbstractCommandClass {
       return 1;
     }
     return s1.compareTo(s2);
+  }
+
+  /**
+   * The main method for sub-command {@code getcurrentdatabase}.<br>
+   * Displays the name of the currently connected database.
+   *
+   * @throws ShellException if the connection is closed or error while providing current database
+   *     information
+   * @see ExperimentalTool#getCurrentDatabase
+   */
+  @GSCommand
+  public void getCurrentDatabase() {
+    checkConnected();
+
+    try {
+      DatabaseInfo info = ExperimentalTool.getCurrentDatabase(gridStore);
+      println(info.getName());
+
+    } catch (Exception e) {
+      throw new ShellException(
+          getMessage("error.getCurrentDb") + " : msg=[" + e.getMessage() + "]", e);
+    }
+  }
+
+  /**
+   * 指定された名前のデータベースが存在するか確認します.
+   *
+   * @param dbName データベース名
+   * @return true:存在する false:存在しない
+   */
+  private boolean existsDatabase(String dbName) throws GSException {
+    return (getDatabaseInfo(dbName) == null) ? false : true;
+  }
+
+  /**
+   * 指定された名前のデータベース情報を返します.
+   *
+   * @param dbName データベース名
+   * @return データベース情報 (存在しない場合はnull)
+   * @throws GSException GSException
+   */
+  private DatabaseInfo getDatabaseInfo(String dbName) throws GSException {
+    // [memo] DB名は大文字小文字区別なし
+    Map<String, DatabaseInfo> map = ExperimentalTool.getDatabases(gridStore);
+    for (Map.Entry<String, DatabaseInfo> entry : map.entrySet()) {
+      if (dbName.equalsIgnoreCase(entry.getKey())) {
+        return entry.getValue();
+      }
+    }
+    return null;
+  }
+
+  /**
+   * The main method for sub-command {@code createuser}.<br>
+   * Create a user. Need to run with administrator user.
+   *
+   * @param userName user name
+   * @param password password
+   * @throws ShellException if it meets 1 of the following conditions:
+   *     <ul>
+   *       <li>The connection is closed
+   *       <li>Error while checking user information
+   *       <li>Current user is not an administrator
+   *       <li>User already existed
+   *       <li>Unable to create user
+   *     </ul>
+   *
+   * @see ExperimentalTool#putUser
+   */
+  @GSCommand
+  public void createUser(String userName, String password) {
+    checkConnected();
+    checkSuperUser();
+
+    try {
+      if (existsUser(userName)) {
+        throw new ShellException(getMessage("error.userAlreadyExists", userName));
+      }
+
+      UserInfo info = new UserInfo();
+      info.setName(userName);
+      info.setPassword(password);
+      ExperimentalTool.putUser(gridStore, userName, info, false);
+
+    } catch (GSException e) {
+      throw new ShellException(
+          getMessage("error.createUser") + " : msg=[" + e.getMessage() + "]", e);
+    }
+  }
+
+  /**
+   * The main method for sub-command {@code dropuser}.<br>
+   * Delete a user. Need to run with administrator user.
+   *
+   * @param userName user name
+   * @throws ShellException if it meets 1 of the following conditions:
+   *     <ul>
+   *       <li>The connection is closed
+   *       <li>Current user is not an administrator
+   *       <li>Error while checking user information
+   *       <li>User not found
+   *       <li>Unable to drop user
+   *     </ul>
+   *
+   * @see ExperimentalTool#dropUser
+   */
+  @GSCommand
+  public void dropUser(String userName) {
+    checkConnected();
+    checkSuperUser();
+
+    try {
+      if (!existsUser(userName)) {
+        throw new ShellException(getMessage("error.userNotFound", userName));
+      }
+
+      ExperimentalTool.dropUser(gridStore, userName);
+
+    } catch (GSException e) {
+      throw new ShellException(getMessage("error.dropUser") + " : msg=[" + e.getMessage() + "]", e);
+    }
+  }
+
+  /**
+   * The main method for sub-command {@code setpassword}.<br>
+   * Set user password.<br>
+   * Need to run with administrator user.
+   *
+   * <ol>
+   *   <li>Administrator: can change the password of general users
+   *   <li>General user: can change his own password only
+   * </ol>
+   *
+   * @param arg1 password if {@code arg2} is not specified, otherwise user name
+   * @param arg2 password
+   * @throws ShellException if it meets 1 of the following conditions:
+   *     <ul>
+   *       <li>The connection is closed
+   *       <li>Change administrator password
+   *       <li>General user changes other user's password
+   *     </ul>
+   *
+   * @see ExperimentalTool#putUser
+   */
+  @GSCommand
+  public void setPassword(String arg1, @GSNullable String arg2) {
+    checkConnected();
+
+    try {
+      String userName = null;
+      String password = null;
+
+      if (arg2 == null) {
+        // 一般ユーザが自分のパスワードを変更する
+        userName = m_connectedUser;
+        password = arg1;
+
+        if (isSuperUser(userName)) {
+          // 管理者のパスワード変更は、運用コマンドgs_passwdで実行してください。
+          throw new ShellException(getMessage("error.setPasswordAdmin", userName));
+        }
+
+      } else {
+        // 管理者が一般ユーザのパスワードを変更する
+        userName = arg1;
+        password = arg2;
+
+        if (!isSuperUser(m_connectedUser)) {
+          // 一般ユーザは他のユーザのパスワードを変更できません。
+          throw new ShellException(getMessage("error.setPasswordNormalUser"));
+        }
+
+        if (isSuperUser(userName)) {
+          // 管理者のパスワード変更は、運用コマンドgs_passwdで実行してください。
+          throw new ShellException(getMessage("error.setPasswordAdmin", userName));
+        }
+
+        // ユーザ情報取得
+        if (!existsUser(userName)) {
+          throw new ShellException(getMessage("error.userNotFound", userName));
+        }
+      }
+
+      // パスワード変更
+      UserInfo newInfo = new UserInfo();
+      newInfo.setPassword(password);
+      ExperimentalTool.putUser(gridStore, userName, newInfo, true);
+
+    } catch (GSException e) {
+      throw new ShellException(
+          getMessage("error.setPassword") + " : msg=[" + e.getMessage() + "]", e);
+    }
+  }
+
+  /**
+   * The main method for sub-command {@code showuser}.<br>
+   * Displays general user or role information. Need to run with administrator user.
+   *
+   * @param name general user name or role name
+   * @throws ShellException if the connection is closed, user or role name does not exist.
+   * @see ExperimentalTool#getUsers
+   * @see ExperimentalTool#getDatabases
+   */
+  @GSCommand
+  public void showUser(@GSNullable String name) {
+    checkConnected();
+
+    try {
+      Map<String, UserInfo> userList = ExperimentalTool.getUsers(gridStore);
+      if (name == null) {
+        // 一覧表示
+        printfln("%-32s %-10s", "Name", "Type");
+        println("-------------------------------------------");
+        for (Map.Entry<String, UserInfo> entry : userList.entrySet()) {
+          UserInfo info = entry.getValue();
+          // V4.5 print name follow user name or role name
+          String userName = null;
+          boolean isRole = info.isRole();
+          if (!isRole) {
+            userName = info.getName();
+            if (info.isSuperUser()) {
+              userName += " (SuperUser)";
+            }
+          }
+
+          printfln(
+              "%-32s %-10s",
+              (isRole) ? info.getRoleName() : userName, (isRole) ? TYPE_ROLE : TYPE_GENERAL_USER);
+        }
+      } else {
+        UserInfo info = null;
+        for (Map.Entry<String, UserInfo> entry : userList.entrySet()) {
+          if (name.equalsIgnoreCase(entry.getKey())) {
+            info = entry.getValue();
+            break;
+          }
+        }
+        if (info == null) {
+          throw new ShellException(getMessage("error.userOrRoleNotFound", name));
+        } else {
+          // V4.5 print name follow user name or role name
+          println("Name     : " + ((info.isRole()) ? info.getRoleName() : info.getName()));
+          println("Type     : " + ((info.isRole()) ? TYPE_ROLE : TYPE_GENERAL_USER));
+          if (info.isSuperUser()) {
+            println("SuperUser: true");
+          }
+          println("GrantedDB: " + ToolConstants.PUBLIC_DB);
+          Map<String, DatabaseInfo> dbList = ExperimentalTool.getDatabases(gridStore);
+          List<Map.Entry<String, DatabaseInfo>> dbEntryList =
+              new ArrayList<Map.Entry<String, DatabaseInfo>>();
+          for (Map.Entry<String, DatabaseInfo> entry : dbList.entrySet()) {
+            dbEntryList.add(entry);
+          }
+          // DB名ソート用Comparator
+          Comparator<Map.Entry<String, DatabaseInfo>> comparator =
+              new Comparator<Map.Entry<String, DatabaseInfo>>() {
+                @Override
+                public int compare(
+                    Map.Entry<String, DatabaseInfo> o1, Map.Entry<String, DatabaseInfo> o2) {
+                  String name1 = o1.getKey();
+                  String name2 = o2.getKey();
+                  return stringCompare(name1, name2);
+                }
+              };
+          // DB名でソート
+          Collections.sort(dbEntryList, comparator);
+          for (Map.Entry<String, DatabaseInfo> entry : dbEntryList) {
+            // DB名
+            String dbName = entry.getKey();
+            Map<String, PrivilegeInfo> acl = entry.getValue().getPrivileges();
+            for (Map.Entry<String, PrivilegeInfo> aclEntry : acl.entrySet()) {
+              if (name.equalsIgnoreCase(aclEntry.getKey())) {
+                // 権限
+                String role = "";
+                PrivilegeInfo privilegeInfo = aclEntry.getValue();
+                if (privilegeInfo != null) {
+                  role = privilegeInfo.getRole().toString();
+                }
+                printfln("           %-15s  %s", dbName, role);
+              }
+            }
+          }
+        }
+      }
+    } catch (GSException e) {
+      throw new ShellException(getMessage("error.showUser") + " : msg=[" + e.getMessage() + "]", e);
+    }
+  }
+
+  /**
+   * ユーザが存在するか確認します.
+   *
+   * @param userName ユーザ名
+   * @return true:存在する false:存在しない
+   * @throws GSException GSException
+   */
+  private boolean existsUser(String userName) throws GSException {
+    // [memo] ユーザ名は大文字小文字区別なし
+    Map<String, UserInfo> userList = ExperimentalTool.getUsers(gridStore);
+    for (Map.Entry<String, UserInfo> entry : userList.entrySet()) {
+      if (userName.equalsIgnoreCase(entry.getKey())) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * The main method for sub-command {@code grantacl}.<br>
+   * Grant access rights. Need to run with administrator user.
+   *
+   * @param role authority
+   * @param dbName database name
+   * @param userName user name
+   * @throws ShellException if it meets 1 of the following conditions:
+   *     <ul>
+   *       <li>The connection is closed
+   *       <li>Current user is not an administrator
+   *       <li>Error while checking user information
+   *       <li>Database not found
+   *       <li>Manage administrator privilege
+   *       <li>User name not found
+   *       <li>Privilege is already granted
+   *       <li>Unable to grant permission
+   *     </ul>
+   *
+   * @see ExperimentalTool#putPrivilege
+   */
+  @GSCommand(name = "grantacl")
+  public void grant(PrivilegeInfo.RoleType role, String dbName, String userName) {
+    checkConnected();
+    checkSuperUser();
+
+    try {
+      DatabaseInfo dbInfo = getDatabaseInfo(dbName);
+      // DBの存在チェック
+      if (dbInfo == null) {
+        throw new ShellException(getMessage("error.dbNotFound", dbName));
+      }
+      // 管理者ユーザチェック
+      if (isSuperUser(userName)) {
+        throw new ShellException(getMessage("error.privSuperUser", userName));
+      }
+      // 指定ユーザの存在チェック
+      if (!existsUser(userName)) {
+        throw new ShellException(getMessage("error.userNotFound", userName));
+      }
+      // 権限付与済みのチェック
+      if (checkPrivilege(dbInfo, userName)) {
+        throw new ShellException(
+            getMessage("error.privilegeAlreadyExists", dbName)
+                + " role=["
+                + role.toString()
+                + "] dbName=["
+                + dbName
+                + "] user=["
+                + userName
+                + "]");
+      }
+      // [memo] V2.7では、1つのデータベースには1人のユーザしか権限付与できない。
+      // V4.3 1つのデータベースに複数ユーザの権限付与が可能となったためチェックをはずす。
+      // if ( dbInfo.getPrivileges().size() != 0 ){
+      // throw new ShellException(getMessage("error.privilegeAlreadyExists2",
+      // dbName));
+      // }
+
+      PrivilegeInfo info = new PrivilegeInfo();
+      // V4.3 PrivilegeInfo に権限をセット
+      info.setRole(role);
+
+      ExperimentalTool.putPrivilege(gridStore, dbName, userName, info);
+
+    } catch (GSException e) {
+      throw new ShellException(getMessage("error.grant") + " : msg=[" + e.getMessage() + "]", e);
+    }
+  }
+
+  /**
+   * The main method for sub-command {@code revokeacl}.<br>
+   * Strip access rights. Need to run with administrator user.
+   *
+   * @param role authority
+   * @param dbName database name
+   * @param userName user name
+   * @throws ShellException if it meets 1 of the following conditions:
+   *     <ul>
+   *       <li>The connection is closed
+   *       <li>Current user is not an administrator
+   *       <li>Error while checking user information
+   *       <li>Database not found
+   *       <li>Manage administrator privilege
+   *       <li>User not found
+   *       <li>This permission is not granted
+   *       <li>Unable to revoke permission
+   *     </ul>
+   *
+   * @see ExperimentalTool#dropPrivilege
+   */
+  @GSCommand(name = "revokeacl")
+  public void revoke(PrivilegeInfo.RoleType role, String dbName, String userName) {
+    checkConnected();
+    checkSuperUser();
+
+    try {
+      DatabaseInfo dbInfo = getDatabaseInfo(dbName);
+      // DBの存在チェック
+      if (dbInfo == null) {
+        throw new ShellException(getMessage("error.dbNotFound", dbName));
+      }
+      // 管理者ユーザチェック
+      if (isSuperUser(userName)) {
+        throw new ShellException(getMessage("error.privSuperUser", userName));
+      }
+      // 指定ユーザの存在チェック
+      if (!existsUser(userName)) {
+        throw new ShellException(getMessage("error.userNotFound", userName));
+      }
+      // 権限付与済みのチェック
+      if (!checkPrivilege(dbInfo, userName, role)) {
+        throw new ShellException(
+            getMessage("error.privilegeNotFound")
+                + " role=["
+                + role.toString()
+                + "] dbName=["
+                + dbName
+                + "] user=["
+                + userName
+                + "]");
+      }
+
+      PrivilegeInfo info = new PrivilegeInfo();
+      // V4.3 PrivilegeInfo に権限をセット
+      info.setRole(role);
+
+      ExperimentalTool.dropPrivilege(gridStore, dbName, userName, info);
+
+    } catch (GSException e) {
+      throw new ShellException(getMessage("error.revoke") + " : msg=[" + e.getMessage() + "]", e);
+    }
+  }
+
+  /**
+   * 指定されたユーザが管理者ユーザかを確認します.
+   *
+   * <p>・ログインせずに確認する方法として、文字列の一致で処理する system, admin, 先頭がgs#で始まる
+   *
+   * @param name ユーザ名
+   * @return true:管理者 / false:一般ユーザ
+   */
+  private boolean isSuperUser(String name) {
+    if (name.equalsIgnoreCase("system")
+        || name.equalsIgnoreCase("admin")
+        || name.equalsIgnoreCase("gs#")) {
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * ユーザの権限が付与されているかを確認します.
+   *
+   * @param info データベース情報
+   * @param userName ユーザ名
+   * @return true:付与済み false:付与されていない
+   */
+  private boolean checkPrivilege(DatabaseInfo info, String userName) {
+    for (Map.Entry<String, PrivilegeInfo> entry : info.getPrivileges().entrySet()) {
+      if (userName.equalsIgnoreCase(entry.getKey())) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * ユーザの権限が付与されているかを確認します.
+   *
+   * @param info データベース情報
+   * @param userName ユーザ名
+   * @param role 権限
+   * @return true:付与済み false:付与されていない
+   */
+  private boolean checkPrivilege(DatabaseInfo info, String userName, PrivilegeInfo.RoleType role) {
+    for (Map.Entry<String, PrivilegeInfo> entry : info.getPrivileges().entrySet()) {
+      if (userName.equalsIgnoreCase(entry.getKey()) && role.equals(entry.getValue().getRole())) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -851,7 +1618,7 @@ public class DataCommandClass extends AbstractCommandClass {
    * @see GridStore#putContainer
    * @since NoSQL 2.7/NewSQL 1.5
    */
-  @GSCommand(hidden = true)
+  @GSCommand
   public void createContainer(String metaFile, @GSNullable String containerName) {
     checkConnected();
 
@@ -991,7 +1758,16 @@ public class DataCommandClass extends AbstractCommandClass {
           columnName = columnArray[i];
         } else {
           type = columnArray[i];
-          conInfo.addColumnInfo(columnName, MetaContainerFileIO.convertStringToColumnType(type));
+          GSType columnType = MetaContainerFileIO.convertStringToColumnType(type);
+          if (MetaContainerFileIO.isTimestampStringInSeconds(type)) {
+            ColumnInfo ci = new ColumnInfo(columnName, columnType);
+            ColumnInfo.Builder builder = new ColumnInfo.Builder(ci);
+            builder.setTimePrecision(MetaContainerFileIO.convertTimestampStringToTimeUnit(type));
+            conInfo.addColumnInfo(builder.toInfo());
+          }
+          else {
+            conInfo.addColumnInfo(columnName, MetaContainerFileIO.convertStringToColumnType(type));
+          }
           columnName = null;
         }
       }
@@ -1079,6 +1855,7 @@ public class DataCommandClass extends AbstractCommandClass {
    * @throws ShellException if it meets 1 of the following conditions:
    *     <ul>
    *       <li>The connection is closed
+   *       <li>Container not found
    *       <li>Drop view
    *       <li>Drop partition table
    *     </ul>
@@ -1089,8 +1866,20 @@ public class DataCommandClass extends AbstractCommandClass {
   @GSCommand
   public void dropContainer(String containerName) {
     checkConnected();
+
     try {
+      ExtendedContainerInfo info =
+          ExperimentalTool.getExtendedContainerInfo(gridStore, containerName);
+      if (info == null) {
+        throw new ShellException(getMessage("error.containerNotFound", containerName));
+      } else if (info.getAttribute() == ContainerAttribute.VIEW) {
+        throw new ShellException(getMessage("error.notAllowedOnView", containerName));
+      } else if (info.getAttribute() != ContainerAttribute.SINGLE) {
+        throw new ShellException(getMessage("error.notAllowedOnPartitioned", containerName));
+      }
+
       gridStore.dropContainer(containerName);
+
     } catch (GSException e) {
       throw new ShellException(
           getMessage("error.dropcontainer")
@@ -1183,14 +1972,21 @@ public class DataCommandClass extends AbstractCommandClass {
 
     } else {
       try {
+        ExtendedContainerInfo extInfo =
+            ExperimentalTool.getExtendedContainerInfo(gridStore, containerName);
+        checkContainerExists(containerName, extInfo);
         ContainerInfo contInfo = gridStore.getContainerInfo(containerName);
         checkContainerExists(containerName, contInfo);
-        boolean isPartitioned = false;
-        if (m_jdbcCon != null) {
-          if (isPartitionTable(containerName)) {
-            isPartitioned = true;
-          }
+
+        // SINGLE/LARGE以外のコンテナは存在しない扱い
+        if (extInfo.getAttribute() != ContainerAttribute.SINGLE
+            && extInfo.getAttribute() != ContainerAttribute.LARGE) {
+          throw new ShellException(getMessage("error.notNoSQLContainer", containerName));
         }
+
+        // LARGEコンテナであれば、パーティションに関する出力を行う
+        boolean isPartitioned = (extInfo.getAttribute() == ContainerAttribute.LARGE);
+
         switch (contInfo.getType()) {
           case COLLECTION:
             showCollectionDetail(contInfo, isPartitioned);
@@ -1206,26 +2002,6 @@ public class DataCommandClass extends AbstractCommandClass {
             getMessage("error.showcontainerDetail") + " : msg=[" + e.getMessage() + "]", e);
       }
     }
-  }
-
-  private boolean isPartitionTable(String tableName) throws SQLException {
-    m_jdbcStmt = m_jdbcCon.createStatement();
-    String queryCommand =
-        "SELECT PARTITION_TYPE FROM \"#tables\" where TABLE_NAME='" + tableName + "'";
-
-    try (ResultSet jdbc_RS = m_jdbcStmt.executeQuery(queryCommand)) {
-      while (jdbc_RS.next()) {
-        if (jdbc_RS.getObject(1) != null) {
-          m_jdbcStmt.close();
-          return true;
-        } else {
-          m_jdbcStmt.close();
-          return false;
-        }
-      }
-    }
-    m_jdbcStmt.close();
-    return false;
   }
 
   /**
@@ -1362,7 +2138,7 @@ public class DataCommandClass extends AbstractCommandClass {
         rowKey = "[RowKey]";
       }
 
-      printfln("%2d  %-20s  %-15s %-5s %s", colNo, colName, colInfo.getType(), cstr, rowKey);
+      printfln("%2d  %-20s  %-15s %-5s %s", colNo, colName, formatColumnType(colInfo), cstr, rowKey);
     }
 
     if (gsIndices.size() > 0) {
@@ -1380,6 +2156,65 @@ public class DataCommandClass extends AbstractCommandClass {
           printfln("%2d  %s", indexColNo, indexColNameList.get(indexColNo));
         }
         println("");
+      }
+    }
+  }
+
+  @Deprecated
+  private ExtendedContainerInfo getPartitionTableDetail(ExtendedContainerInfo contInfo)
+      throws Exception {
+    checkConnectedSQL();
+
+    ResultSet rs = null;
+    try {
+      List<ColumnInfo> columns = new ArrayList<ColumnInfo>();
+      Set<IndexType> columnIndexs = new HashSet<IndexType>();
+
+      // メタデータからプライマリキーの情報を取得する。
+      // テーブル名以外の条件は無視されるが、null指定はできない
+      DatabaseMetaData dbmd = m_jdbcCon.getMetaData();
+      rs = dbmd.getPrimaryKeys("", "", contInfo.getName());
+
+      // RKAは1つめのカラムにPRIMARY KEY指定があった場合にtrueとなる(V3.0)
+      // ロウキーは最初のカラム以外に設定できない(V3.0)
+      // データが存在すれば、RKA=trueであると分かる。
+      if (rs.next()) {
+        contInfo.setRowKeyAssigned(true);
+      } else {
+        contInfo.setRowKeyAssigned(false);
+      }
+      rs.close();
+      rs = null;
+
+      // メタデータからテーブルのカラム情報を取得する。
+      // テーブル名以外の条件は無視されるが、null指定はできない
+      rs = dbmd.getColumns("", "", contInfo.getName(), "");
+      while (rs.next()) { // 1行目は無視。メタデータのカラム名は取る必要なし
+        String columnName = rs.getString("COLUMN_NAME");
+        String columnTypeStr = rs.getString("TYPE_NAME");
+        GSType columnType = null;
+        if (columnTypeStr != null && columnTypeStr.length() != 0) {
+          columnType = GSType.valueOf(columnTypeStr.toUpperCase());
+        }
+
+        ColumnInfo colInfo = new ColumnInfo(columnName, columnType, columnIndexs);
+        columns.add(colInfo);
+      }
+      rs.close();
+      rs = null;
+
+      // カラム情報を上書きする。
+      contInfo.setColumnInfoList(columns);
+
+      return contInfo;
+
+    } finally {
+      try {
+        if (rs != null) {
+          rs.close();
+        }
+      } catch (Exception e) {
+        // Do nothing
       }
     }
   }
@@ -1452,7 +2287,7 @@ public class DataCommandClass extends AbstractCommandClass {
       }
 
       printfln(
-          "%2d  %-20s  %-15s %-5s %-9s %s", colNo, colName, colInfo.getType(), cstr, rowKey, comp);
+          "%2d  %-20s  %-15s %-5s %-9s %s", colNo, colName, formatColumnType(colInfo), cstr, rowKey, comp);
     }
 
     if (gsIndices.size() > 0) {
@@ -1475,6 +2310,19 @@ public class DataCommandClass extends AbstractCommandClass {
   }
 
   /**
+   * Display format for column type
+   * @param colInfo The column information
+   * @return Column type
+   * @throws GridStoreCommandException
+   */
+  private Object formatColumnType(ColumnInfo colInfo) throws GridStoreCommandException {
+    if (colInfo.getType().equals(GSType.TIMESTAMP) && MetaContainerFileIO.isTimestampUnit(colInfo.getTimePrecision())) {
+      return MetaContainerFileIO.convertTimeunitToTimestampType(colInfo.getTimePrecision());
+    }
+    return colInfo.getType();
+  }
+
+  /**
    * ロウキーのカラムであるかを返します.
    *
    * @param colNo カラム番号
@@ -1490,105 +2338,17 @@ public class DataCommandClass extends AbstractCommandClass {
   }
 
   /**
-   * The main method for sub-command {@code droptrigger}.<br>
-   * Delete the trigger.
+   * テーブルの詳細情報を表示します.
    *
-   * @param containerName container name
-   * @param triggerName trigger name
-   * @throws ShellException if it meets 1 of the following conditions:
-   *     <ul>
-   *       <li>The connection is closed
-   *       <li>Specify container is a view
-   *       <li>Partition container
-   *     </ul>
-   *
-   * @see Container#dropTrigger
-   * @since NoSQL 2.7/NewSQL 1.5
+   * @param contInfo コンテナ情報
+   * @param maintenance メンテナンスモード
+   * @throws GSException GSException
    */
-  @GSCommand
-  public void dropTrigger(String containerName, String triggerName) {
-    checkConnected();
-
-    try {
-      Container<?, Row> container = gridStore.getContainer(containerName);
-      container.dropTrigger(triggerName);
-      container.close();
-    } catch (NullPointerException e) {
-      throw new ShellException(getMessage("error.containerNotFound", containerName));
-    } catch (GSException e) {
-      throw new ShellException(
-          getMessage("error.droptrigger")
-              + " : container=["
-              + containerName
-              + "] trigger=["
-              + triggerName
-              + "] msg=["
-              + e.getMessage()
-              + "]",
-          e);
-    }
-  }
-
-  /**
-   * The main method for sub-command {@code showtrigger}.<br>
-   * Displays trigger information.
-   *
-   * @param containerName container name
-   * @param triggerName trigger name
-   * @throws ShellException if the connection is closed or trigger not found
-   * @throws IllegalArgumentException container not existed
-   */
-  @GSCommand
-  public void showTrigger(String containerName, @GSNullable String triggerName) {
-    checkConnected();
-
-    try {
-      ContainerInfo contInfo = gridStore.getContainerInfo(containerName);
-      checkContainerExists(containerName, contInfo);
-      List<TriggerInfo> triggerInfoList = contInfo.getTriggerInfoList();
-
-      if (triggerName == null) {
-        println("Name                 Type  Columns              Events");
-        println("---------------------------------------------------------------");
-        for (TriggerInfo triggerInfo : triggerInfoList) {
-          printfln(
-              "%-20s %-5s %-20s %-12s",
-              triggerInfo.getName(),
-              triggerInfo.getType(),
-              triggerInfo.getTargetColumns(),
-              triggerInfo.getTargetEvents());
-        }
-
-      } else {
-        TriggerInfo triggerInfo = null;
-        for (TriggerInfo ti : triggerInfoList) {
-          if (ti.getName().equals(triggerName)) {
-            triggerInfo = ti;
-            break;
-          }
-        }
-        if (triggerInfo == null) {
-          throw new ShellException(getMessage("error.triggerNotFound", triggerName));
-        }
-
-        println("Name          : " + triggerInfo.getName());
-        println("Type          : " + triggerInfo.getType());
-        println("Target Columns: " + triggerInfo.getTargetColumns());
-        println("Target Events : " + triggerInfo.getTargetEvents());
-        println("");
-        println("Destination URI: " + triggerInfo.getURI());
-        if (triggerInfo.getType() == TriggerInfo.Type.JMS) {
-          println("JMS Settings:");
-          println("  Destination Name: " + triggerInfo.getJMSDestinationName());
-          println("  Destination Type: " + triggerInfo.getJMSDestinationType());
-          println("  User            : " + triggerInfo.getUser());
-          println("  Password        : " + triggerInfo.getPassword());
-        }
-      }
-    } catch (GSException e) {
-      throw new ShellException(
-          getMessage("error.showtrigger") + " : msg=[" + e.getMessage() + "]", e);
-    }
+  @Deprecated
+  private void showTableDetail(ExtendedContainerInfo contInfo, boolean maintenance)
+      throws Exception {
+    // V2.7では、New SQLのコンテナはCollectionタイプのみ。
+    showCollectionDetail(contInfo, maintenance);
   }
 
   /**
@@ -1607,7 +2367,7 @@ public class DataCommandClass extends AbstractCommandClass {
    * @throws IllegalArgumentException error when container not existed
    */
   @GSCommand(multiline = true)
-  public void tql(String containerName, String query) throws SQLException {
+  public void tql(String containerName, String query) {
     checkConnected();
 
     queryObjClose();
@@ -1621,10 +2381,11 @@ public class DataCommandClass extends AbstractCommandClass {
       FetchOption fetchOption =
           FetchOption.valueOf(GS_TQL_FETCH_MODE_DEFAULT);
 
-      if (m_jdbcCon != null) {
-        if (isPartitionTable(containerName)) {
-          fetchOption = FetchOption.PARTIAL_EXECUTION;
-        }
+      // V4.0 パーティショニングテーブルにはPARTIAL_EXECUTIONのみ指定可
+      ExtendedContainerInfo exInfo =
+          ExperimentalTool.getExtendedContainerInfo(gridStore, containerName);
+      if (exInfo != null && exInfo.getAttribute() == ContainerAttribute.LARGE) {
+        fetchOption = FetchOption.PARTIAL_EXECUTION;
       }
 
       String fetchMode = getAttributeString(GridStoreShell.TQL_FETCH_MODE, "").toUpperCase();
@@ -1633,12 +2394,14 @@ public class DataCommandClass extends AbstractCommandClass {
       } catch (IllegalArgumentException e) {
       }
 
-      if (m_jdbcCon != null) {
-        if (fetchOption.equals(FetchOption.SIZE) || fetchOption.equals(FetchOption.LIMIT)) {
-          queryObj.setFetchOption(fetchOption, getFetchSize());
-        } else {
-          queryObj.setFetchOption(fetchOption, true);
-        }
+      // オプション指定
+      // (設計メモ)オプションによって第2引数の型が変わることに注意する。
+      if (fetchOption.equals(FetchOption.SIZE) || fetchOption.equals(FetchOption.LIMIT)) {
+        // LIMITまたはSIZEの場合、フェッチサイズをintで指定する
+        queryObj.setFetchOption(fetchOption, getFetchSize());
+      } else {
+        // PARTIAL_EXECUTIONの場合、trueを指定すると部分実行が有効になる
+        queryObj.setFetchOption(fetchOption, true);
       }
 
       long start = System.currentTimeMillis();
@@ -1688,6 +2451,17 @@ public class DataCommandClass extends AbstractCommandClass {
    */
   private String getNullStdOut() {
     return getAttributeString(GridStoreShell.NAME_NULL_STDOUT, GS_NULL_STDOUT_DEFAULT);
+  }
+
+  /**
+   * NULLのCSV出力用文字列を返します.
+   *
+   * <p>隠し変数GS_NULL_CSVの文字列を取得して返します。 値が無かった場合はデフォルト値を返します。
+   *
+   * @return 文字列
+   */
+  private String getNullCsv() {
+    return getAttributeString(GridStoreShell.NAME_NULL_CSV, GS_NULL_CSV_DEFAULT);
   }
 
   /**
@@ -1835,6 +2609,28 @@ public class DataCommandClass extends AbstractCommandClass {
      */
     protected abstract String formatDate(Date date);
 
+   /**
+    * Convert timestamp to string base on its precision
+    *
+    * @param timestamp the timestamp to convert
+    * @param precisionUnit unit of timestamp
+    * @return formatted string of timestamp
+    */
+    protected String formatTimestamp(Timestamp timestamp, TimeUnit precisionUnit) {
+      ZonedDateTime zdt = null;
+      if (m_connectTimeZoneVal == null) {
+        // UTC if there is no time zone settings
+        zdt = ZonedDateTime.ofInstant(timestamp.toInstant(), ZoneId.of("UTC"));
+      } else if ("auto".equals(m_connectTimeZoneVal)) {
+        // If the time zone setting is Auto, the system default
+        zdt = ZonedDateTime.ofInstant(timestamp.toInstant(), ZoneId.systemDefault());
+      } else {
+        // If there is a time zone settings, reflect the setting value
+        zdt = ZonedDateTime.ofInstant(timestamp.toInstant(), ZoneOffset.of(m_connectTimeZoneVal));
+      }
+      return zdt.format(MetaContainerFileIO.getDateTimeFormatter(precisionUnit));
+    }
+
     /**
      * オブジェクトの文字列化.
      *
@@ -1878,6 +2674,17 @@ public class DataCommandClass extends AbstractCommandClass {
     }
 
     /**
+     * Convert timestamp to string
+     * 
+     * @param data the timestamp date
+     * @param precisionUnit the precision of timestamp in TimeUnit
+     * @return string of timestamp
+     */
+    private String stringify(Timestamp data, TimeUnit precisionUnit) {
+      return formatTimestamp(data, precisionUnit);
+    }
+
+    /**
      * Get rows and display.
      *
      * @param count maximum number of records to retrieve
@@ -1914,7 +2721,13 @@ public class DataCommandClass extends AbstractCommandClass {
             }
 
             for (int colNo = 0; colNo < colCount; ++colNo) {
-              line[colNo] = stringify(row.getValue(colNo), replaceNull);
+              ColumnInfo ci = schema.getColumnInfo(colNo);
+              Object data   = row.getValue(colNo);
+              if(data instanceof Timestamp) {
+                line[colNo] = stringify((Timestamp)   data, ci.getTimePrecision());
+              } else {
+                line[colNo] = stringify(data, replaceNull);
+              }
             }
             printLine(1 + rowNo, line);
 
@@ -1929,8 +2742,16 @@ public class DataCommandClass extends AbstractCommandClass {
             if (number != null) {
               printLine(1 + rowNo, stringify(number, replaceNull));
             } else {
-              Date timestamp = agg.getTimestamp();
-              printLine(1 + rowNo, stringify(timestamp, replaceNull));
+              ContainerInfo contInfo =  queryRowSet.getSchema();
+              // AggregationResult has only 1 column
+              TimeUnit precision = contInfo.getColumnInfo(0).getTimePrecision();
+              String line;
+              if (precision == TimeUnit.MICROSECOND || precision == TimeUnit.NANOSECOND) {
+                line = stringify(agg.getPreciseTimestamp(), precision);
+              } else {
+                line = stringify(agg.getTimestamp(), replaceNull);
+              }
+              printLine(1 + rowNo, line);
             }
 
           } else if (obj instanceof QueryAnalysisEntry) {
@@ -1952,7 +2773,7 @@ public class DataCommandClass extends AbstractCommandClass {
         }
         return rowNo;
 
-      } catch (GSException e) {
+      } catch (GSException | IllegalArgumentException e) {
         throw new ShellException(getMessage("error.getrow") + " : msg=[" + e.getMessage() + "]", e);
       }
     }
@@ -2210,7 +3031,7 @@ public class DataCommandClass extends AbstractCommandClass {
    * @throws IllegalArgumentException if container not existed
    */
   @GSCommand(multiline = true)
-  public void tqlexplain(String containerName, String query) throws SQLException {
+  public void tqlexplain(String containerName, String query) {
     checkConnected();
 
     Container<Object, Row> container = null;
@@ -2218,11 +3039,14 @@ public class DataCommandClass extends AbstractCommandClass {
     RowSet<QueryAnalysisEntry> rowSet = null;
 
     try {
-      if (m_jdbcCon != null) {
-        if (isPartitionTable(containerName)) {
-          throw new ShellException(getMessage("error.notAllowedOnPartitioned", containerName));
-        }
+      // パーティションコンテナ(LARGE)には実行不可
+      ExtendedContainerInfo info =
+          ExperimentalTool.getExtendedContainerInfo(gridStore, containerName);
+
+      if (info == null || info.getAttribute() == ContainerAttribute.VIEW) {
+        throw new ShellException(getMessage("error.containerNotFound", containerName));
       }
+
       container = gridStore.getContainer(containerName);
       checkContainerExists(containerName, container);
       queryObj = container.query("EXPLAIN " + query, QueryAnalysisEntry.class);
@@ -2890,6 +3714,7 @@ public class DataCommandClass extends AbstractCommandClass {
       boolean useIndex = false;
       String columnName = null;
 
+      // profile/op/index があれば INDEXを使用したと判断
       try {
         if (json.get("profile").get("op").has("index")) {
           useIndex = true;
@@ -2900,22 +3725,29 @@ public class DataCommandClass extends AbstractCommandClass {
         // Do nothing
       }
 
+      // profile/op/index がない場合
+      // profile/op[n]/op[n]/index があれば INDEXを使用したと判断
       try {
-        if (!useIndex && json.get("profile").get("op").has("sub")) {
-          int size = json.get("profile").get("op").get("sub").size();
-          ArrayList<String> columnNames = new ArrayList<String>();
-          for (int i = 0; i < size; i++) {
-            if (json.get("profile").get("op").get("sub").get(i).has("index")) {
-              useIndex = true;
-              JsonNode indexJson = json.get("profile").get("op").get("sub").get(i).get("index");
-              String tmpColumnName = getIndexColumnName(indexJson);
-              if (tmpColumnName != null) {
-                columnNames.add(tmpColumnName);
+        int sizeOp = json.get("profile").get("op").size();
+        for (int i = 0; i < sizeOp; i++) {
+          JsonNode jsonOp = json.get("profile").get("op").get(i);
+          if (!useIndex && jsonOp.has("op")) {
+            int size = jsonOp.get("op").size();
+            ArrayList<String> columnNames = new ArrayList<String>();
+            for (int j = 0; j < size; j++) {
+              if (jsonOp.get("op").get(j).has("index")) {
+                useIndex = true;
+                JsonNode indexJson = jsonOp.get("op").get(j).get("index");
+                String tmpColumnName = getIndexColumnName(indexJson);
+                if (tmpColumnName != null) {
+                  columnNames.add(tmpColumnName);
+                }
               }
             }
+            columnName = joinStr(columnNames, ", ");
           }
-          columnName = joinStr(columnNames, ", ");
         }
+
       } catch (Exception e) {
         // Do nothing
       }
@@ -2957,20 +3789,26 @@ public class DataCommandClass extends AbstractCommandClass {
       boolean typeInfoFound = false;
       String typeInfoStr = null;
 
+      // profile/op[n]/op[n]/type があれば、その値を取得
+
       try {
-        if (json.get("profile").get("op").get("sub").isArray()) {
-          int size = json.get("profile").get("op").get("sub").size();
-          ArrayList<String> typeInfoStrAry = new ArrayList<String>();
-          for (int i = 0; i < size; i++) {
-            JsonNode profileOpSubJson = json.get("profile").get("op").get("sub").get(i);
-            String tmpType = getProfileOpType(profileOpSubJson);
-            if (tmpType != null) {
-              typeInfoStrAry.add(tmpType);
+        int sizeOp = json.get("profile").get("op").size();
+        for (int i = 0; i < sizeOp; i++) {
+          JsonNode jsonOp = json.get("profile").get("op").get(i);
+          if (jsonOp.get("op").isArray()) {
+            int size = jsonOp.get("op").size();
+            ArrayList<String> typeInfoStrAry = new ArrayList<String>();
+            for (int j = 0; j < size; j++) {
+              JsonNode profileOpSubJson = jsonOp.get("op").get(j);
+              String tmpType = getProfileOpType(profileOpSubJson);
+              if (tmpType != null) {
+                typeInfoStrAry.add(tmpType);
+              }
             }
-          }
-          if (!typeInfoStrAry.isEmpty()) {
-            typeInfoStr = joinStr(typeInfoStrAry, " ");
-            typeInfoFound = true;
+            if (!typeInfoStrAry.isEmpty()) {
+              typeInfoStr = joinStr(typeInfoStrAry, " ");
+              typeInfoFound = true;
+            }
           }
         }
       } catch (Exception e) {
@@ -3794,6 +4632,15 @@ public class DataCommandClass extends AbstractCommandClass {
     }
 
     /**
+     * Set JsonNode for {@code ExplainInfo}.
+     *
+     * @param jsonNode a {@code JsonNode}
+     */
+    public void setJsonNode(JsonNode jsonNode) {
+      this.jsonNode = jsonNode;
+    }
+
+    /**
      * Get table name display value of {@code ExplainInfo}.
      *
      * @return table name display value of {@code ExplainInfo}
@@ -3827,6 +4674,15 @@ public class DataCommandClass extends AbstractCommandClass {
      */
     public void setUseIndex(boolean useIndex) {
       this.useIndex = useIndex;
+    }
+
+    /**
+     * Get column name that uses index.
+     *
+     * @return column name that uses index
+     */
+    public String getUseIndexColumnName() {
+      return useIndexColumnName;
     }
 
     /**
@@ -4190,7 +5046,7 @@ public class DataCommandClass extends AbstractCommandClass {
         Row row = rowSet.next();
         String nodeAddress = row.getString(ToolConstants.META_TABLE_EVENT_INFO_NODE_ADDRESS_IDX);
         int nodePort = row.getInteger(ToolConstants.META_TABLE_EVENT_INFO_NODE_PORT_IDX);
-        Date startTime = row.getTimestamp(ToolConstants.META_TABLE_EVENT_INFO_START_TIME_IDX);
+        Date startTime = (Date) row.getValue(ToolConstants.META_TABLE_EVENT_INFO_START_TIME_IDX);
 
         String applicationName =
             row.getString(ToolConstants.META_TABLE_EVENT_INFO_APPLICATION_NAME_IDX);
@@ -4338,7 +5194,7 @@ public class DataCommandClass extends AbstractCommandClass {
         String applicationName =
             row.getString(ToolConstants.META_TABLE_CONNECTION_INFO_APPLICATION_NAME_IDX);
         Date creationTime =
-            row.getTimestamp(ToolConstants.META_TABLE_CONNECTION_INFO_CREATION_TIME_IDX);
+            (Date) row.getValue(ToolConstants.META_TABLE_CONNECTION_INFO_CREATION_TIME_IDX);
         long dispatchingEventCount =
             row.getLong(ToolConstants.META_TABLE_CONNECTION_INFO_DISPATCHING_EVENT_COUNT_IDX);
         long sendingEventCount =
@@ -4931,8 +5787,15 @@ public class DataCommandClass extends AbstractCommandClass {
               row.setLong(i, Long.parseLong(valueColumn));
               break;
             case TIMESTAMP:
-              Date columnTimeStampDate = TimestampUtils.parse(valueColumn);
-              row.setTimestamp(i, columnTimeStampDate);
+              if (columnInfo.getTimePrecision() == TimeUnit.MICROSECOND
+                  || columnInfo.getTimePrecision() == TimeUnit.NANOSECOND ) {
+                Timestamp columnTimeStamp = TimestampUtils.parsePrecise(valueColumn);
+                row.setPreciseTimestamp(i, columnTimeStamp);
+              }
+              else { // MILISECOND timestamp still use Date type
+                Date columnTimeStampDate = TimestampUtils.parse(valueColumn);
+                row.setTimestamp(i, columnTimeStampDate);
+              }
               break;
             case BYTE:
               row.setByte(i, Byte.parseByte(valueColumn));
@@ -5057,7 +5920,7 @@ public class DataCommandClass extends AbstractCommandClass {
    * @throws ShellException when authentication is invalid.
    * @see ScriptContext
    */
-  @GSCommand(hidden = true, name = "setauthmethod")
+  @GSCommand(name = "setauthmethod")
   public void setAuthenticationMethod(@GSNullable AuthenticationMethods authentication) {
     if (authentication != null) {
       getContext()
@@ -5078,7 +5941,7 @@ public class DataCommandClass extends AbstractCommandClass {
    * @throws ShellException when notification interface address invalid IPv4 format
    * @see ScriptContext
    */
-  @GSCommand(hidden = true, name = "setntfif")
+  @GSCommand(name = "setntfif")
   public void setNotificationInterfaceAddress(@GSNullable String notificationInterfaceAddress) {
 
     if (notificationInterfaceAddress != null) {
