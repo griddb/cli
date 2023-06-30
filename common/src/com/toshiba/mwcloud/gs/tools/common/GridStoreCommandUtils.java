@@ -13,6 +13,8 @@
 
 package com.toshiba.mwcloud.gs.tools.common;
 
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -755,6 +757,8 @@ public class GridStoreCommandUtils {
 		int countService = 0;
 		boolean result = true;
 		boolean initFlag = true;
+		// Get list of node in the cluster as IP Address (get from configuration file)
+		List<NodeKey> nodesIPAddress = getNodesWithIPAddress(cluster.getNodes());
 
 		// ノードごとのステータス数などの計算
 		for ( T obj : cluster.getNodes() ){
@@ -790,7 +794,8 @@ public class GridStoreCommandUtils {
 					.convertValue(followers, NodeKey[].class);
 
 				for ( NodeKey nkey : followerKeys ){
-					if ( cluster.getNode(nkey) == null ){
+					// Check node information get from API "/node/host" with node information get from configuration file
+					if (!nodesIPAddress.contains(nkey)) {
 						// 定義には含まれていない
 						List<GSNode> undefNodes = clStat.getUndefinedNodes();
 						if ( undefNodes == null ){
@@ -837,6 +842,44 @@ public class GridStoreCommandUtils {
 
 		return result;
 	}
+
+	/**
+	 * Convert the address of NodeKey from host name to IPAddress
+	 *
+	 * @param nodeKey node with host name
+	 * @return nodeKey node with IP Address
+	 * @throws GridStoreCommandException if host name and IP Address not found in the /etc/hosts
+	 */
+	private static NodeKey convertHostnameToIPAddress(NodeKey nodeKey) throws GridStoreCommandException {
+		InetAddress inet = null;
+		NodeKey nodeKeyWithIPAddress = null;
+		try {
+			inet = InetAddress.getByName(nodeKey.getAddress());
+			nodeKeyWithIPAddress = new NodeKey(inet.getHostAddress(), nodeKey.getPort());
+		} catch (UnknownHostException e) {
+			throw new GridStoreCommandException("D10137: Failed to get node status. ("+e.getMessage()+")", e);
+		}
+		return nodeKeyWithIPAddress;
+	}
+
+	/**
+	 * Get list of node in the cluster as IP Address
+	 *
+	 * @param <T> generic type
+	 * @param nodes list of nodes in the config file
+	 * @return list of node in the cluster with IP Address
+	 * @throws GridStoreCommandException
+	 */
+	private static <T> List<NodeKey> getNodesWithIPAddress(List<T> nodes) throws GridStoreCommandException {
+		List<NodeKey> nodesIPAddress = new ArrayList<NodeKey>();
+		for (T obj : nodes) {
+			GSNode node = (GSNode) obj;
+			NodeKey nodeKey = new NodeKey(node.getAddress(), node.getPort());
+			nodesIPAddress.add(convertHostnameToIPAddress(nodeKey));
+		}
+		return nodesIPAddress;
+	}
+
 
 	/**
 	 * Get cluster configuration information.
