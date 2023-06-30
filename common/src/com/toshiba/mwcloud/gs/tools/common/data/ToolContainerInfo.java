@@ -98,6 +98,11 @@ public class ToolContainerInfo {
 
 
 	/**
+	 * タイムインターバル情報リスト
+	 */
+	private List<TimeIntervalInfo> m_timeIntervalInfos;
+	
+	/**
 	 * 期限解放情報
 	 * <p>
 	 * @see ExpirationInfo
@@ -132,6 +137,11 @@ public class ToolContainerInfo {
 	private String fileBaseName;
 
 	/**
+	 * ロウデータファイルの境界値(日付)
+	 */
+	private String m_intervals = null;
+	
+	/**
 	 * 	条件式文字列　--fileterFile で一致した条件式を
 	 */
 	private String filterCondition = null;
@@ -164,6 +174,7 @@ public class ToolContainerInfo {
 
 		m_tablePartitionProperties = new ArrayList<TablePartitionProperty>();
 
+		m_timeIntervalInfos = new ArrayList<TimeIntervalInfo>();
 		// デフォルト値
 		// V3.5～ BASEからSINGLEへ変更
 		//m_conInfo.setAttribute(ContainerAttribute.SINGLE);
@@ -202,6 +213,7 @@ public class ToolContainerInfo {
 		m_triggerInfoList = tcInfo.getTriggerInfoList();	// 参照コピー
 		m_timeSeriesProperties = tcInfo.getTimeSeriesProperties();	// 参照コピー
 		m_tablePartitionProperties = tcInfo.getTablePartitionProperties();	// 参照コピー
+		m_timeIntervalInfos = tcInfo.getTimeIntervalInfos();	// 参照コピー
 		m_expirationInfo = tcInfo.getExpirationInfo();
 
 		partitionNo = tcInfo.getPartitionNo();
@@ -838,7 +850,21 @@ public class ToolContainerInfo {
 	}
 
 
+	/**
+	 * ロウデータファイルの境界値(日付)を設定します。
+	 * @param intervals
+	 */
+	public void setIntervals(String intervals) {
+		m_intervals = intervals;
+	}
 
+	/**
+	 * ロウデータファイルの境界値(日付)を返します。
+	 * @return
+	 */
+	public String getIntervals() {
+		return m_intervals;
+	}
 
 	public void setFilterCondition(String str) {
 		filterCondition = str;
@@ -911,6 +937,22 @@ public class ToolContainerInfo {
 		m_tablePartitionProperties = properties;
 	}
 
+	/**
+	 * タイムインターバル情報リストの取得
+	 * @return m_timeIntervalInfos タイムインターバル情報リスト
+	 */
+	public List<TimeIntervalInfo> getTimeIntervalInfos() {
+		return m_timeIntervalInfos;
+	}
+	
+	/**
+	 * タイムインターバル情報リストの設定
+	 * @param m_timeIntervalInfos タイムインターバル情報リスト
+	 */
+	public void setTimeIntervalInfos(List<TimeIntervalInfo> timeIntervalInfos) {
+		m_timeIntervalInfos = timeIntervalInfos;
+	}	
+	
 	/**
 	 * 期限解放情報の取得
 	 * @return m_expirationInfo 期限解放情報

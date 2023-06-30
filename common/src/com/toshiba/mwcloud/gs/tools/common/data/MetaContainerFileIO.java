@@ -25,8 +25,10 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -41,9 +43,11 @@ import javax.json.stream.JsonParser.Event;
 
 import com.toshiba.mwcloud.gs.ColumnInfo;
 import com.toshiba.mwcloud.gs.ContainerType;
+import com.toshiba.mwcloud.gs.GSException;
 import com.toshiba.mwcloud.gs.GSType;
 import com.toshiba.mwcloud.gs.IndexInfo;
 import com.toshiba.mwcloud.gs.IndexType;
+import com.toshiba.mwcloud.gs.Row;
 import com.toshiba.mwcloud.gs.TimeSeriesProperties;
 import com.toshiba.mwcloud.gs.TimeUnit;
 import com.toshiba.mwcloud.gs.TriggerInfo;
@@ -453,6 +457,10 @@ public class MetaContainerFileIO {
 									break;
 								}
 							}
+						// タイムインターバル情報
+						} else if ( key.equalsIgnoreCase(ToolConstants.JSON_META_TIME_INTERVAL_INFO) ) {
+							// _properties.json/timeIntervalInfoを読込み
+							readTimeIntervalInfos(jp, ci);
 						} else {
 							boolean match = false;
 							for ( int j = 0; j < ToolConstants.JSON_META_GROUP_CONTAINER.length; j++ ){
@@ -698,12 +706,14 @@ public class MetaContainerFileIO {
 			// カラム名、カラム型、カラム制約
 			String columnName = null;
 			GSType columnType = null;
+			TimeUnit precision = null;
 			Boolean nullable = null;
-			for ( int i = 0; i < 6; i++ ){
+			while(event != Event.END_OBJECT){
 				event = jp.next();
 				if ( event == Event.KEY_NAME ){
 					if ( jp.getString().equalsIgnoreCase(ToolConstants.JSON_META_COLUMN_NAME)
 							|| jp.getString().equalsIgnoreCase(ToolConstants.JSON_META_COLUMN_TYPE)
+							|| jp.getString().equalsIgnoreCase(ToolConstants.JSON_META_COLUMN_TIME_PRECISION)
 							|| jp.getString().equalsIgnoreCase(ToolConstants.JSON_META_COLUMN_CSTR_NOTNULL)){
 						columnKey = jp.getString();
 					} else {
@@ -721,6 +731,8 @@ public class MetaContainerFileIO {
 					} else if ( columnKey.equalsIgnoreCase(ToolConstants.JSON_META_COLUMN_TYPE) ){
 						columnType = convertStringToColumnType(jp.getString());
 						typeFlag = true;
+					} else if ( columnKey.equalsIgnoreCase(ToolConstants.JSON_META_COLUMN_TIME_PRECISION) ){
+						precision = convertStringToTimeUnit(jp.getString());
 					} else if ( columnKey.equalsIgnoreCase(ToolConstants.JSON_META_COLUMN_CSTR_NOTNULL) ){
 						// notNullはtrue、false、またはnullのみ受け付ける
 						throw new GridStoreCommandException("The value of '"+ ToolConstants.JSON_META_COLUMN_CSTR_NOTNULL + "' must be boolean or null"
@@ -763,6 +775,12 @@ public class MetaContainerFileIO {
 			}
 
 			ColumnInfo columnInfo = new ColumnInfo(columnName, columnType, nullable, null);
+			if(precision != null && columnType == GSType.TIMESTAMP) {
+				ColumnInfo.Builder builder = new ColumnInfo.Builder(columnInfo);
+				builder.setTimePrecision(precision);
+				ColumnInfo swap = builder.toInfo();
+				columnInfo = swap;
+			}
 			ci.addColumnInfo(columnInfo);
 		}
 	}
@@ -1569,6 +1587,127 @@ public class MetaContainerFileIO {
 		return partProp;
 	}
 
+	/**
+	 * タイムインターバル情報を読み込みます。
+	 * <p>
+	 * 読込み対象のJSONの例は以下のとおり。
+	 * <pre>
+	 * "timeIntervalInfo":[
+   *     {
+   *         "containerFile":"public.ParallelMultiPut_1_2020-12-21_2020-12-22.csv",
+   *         "boundaryValue":"2020-12-21T00:00:00.000+0000"
+   *     }
+   * ]
+	 * </pre>
+	 *
+	 * @param jp JsonParser
+	 * @param ci コンテナ情報オブジェクト
+	 * @throws GridStoreCommandException 要素がない場合
+	 * @throws GridStoreCommandException 配列またはオブジェクトでない場合
+	 * @throws GridStoreCommandException 配列の要素がオブジェクトではない場合
+	 * @throws GridStoreCommandException 配列要素のオブジェクト内に指定が必須のキーが存在しない場合
+	 * @throws GridStoreCommandException 配列要素のオブジェクト内に指定が必須のキーの値が無効である場合
+	 */
+	public void readTimeIntervalInfos(JsonParser jp, ToolContainerInfo ci) throws GridStoreCommandException {
+		// 要素が無い場合はException
+		if (!jp.hasNext()) {
+			throw new GridStoreCommandException("'"+ToolConstants.JSON_META_TIME_INTERVAL_INFO+"' is invalid."
+					+": line(about)=["+jp.getLocation().getLineNumber()+"]");
+		}
+
+		// 配列、または、オブジェクトでない場合はException
+		Event event = jp.next();
+		if ( (event != Event.START_ARRAY) && (event != Event.START_OBJECT) ){
+			throw new GridStoreCommandException("'"+ToolConstants.JSON_META_TIME_INTERVAL_INFO+"' is invalid."
+					+": line(about)=["+jp.getLocation().getLineNumber()+"]"+event);
+		}
+		
+		List<TimeIntervalInfo> timeIntervalInfos = new ArrayList<TimeIntervalInfo>();
+
+		if (event == Event.START_ARRAY){
+			while (jp.hasNext()){
+				event = jp.next();
+				if ( event == Event.START_OBJECT ){
+					TimeIntervalInfo timeIntervalInfo = readTimeIntervalInfo(jp, ci);
+					timeIntervalInfos.add(timeIntervalInfo);
+
+				} else if ( event == Event.END_ARRAY ){
+					break;
+
+				} else {
+					throw new GridStoreCommandException("Elements of the array of '"+ToolConstants.JSON_META_TIME_INTERVAL_INFO+"' must be object."
+							+": line(about)=["+jp.getLocation().getLineNumber()+"]");
+				}
+			}
+		}
+		
+		// ツールコンテナ情報にインターバル分割情報リストを詰める
+		ci.setTimeIntervalInfos(timeIntervalInfos);
+	}
+
+	private TimeIntervalInfo readTimeIntervalInfo(JsonParser jp, ToolContainerInfo ci ) throws GridStoreCommandException {
+		
+		TimeIntervalInfo ti = null;
+		
+		Event event = null;
+		String key = null;
+		String containerFileName = null;//import対象のファイル名
+		String boundaryValue = null;//対象ファイルのインターバル
+
+		while (jp.hasNext()){
+			event = jp.next();
+			switch (event) {
+				case END_OBJECT:
+					break;
+
+				case KEY_NAME:
+					// プロパティ名のバリデーション
+					if ( jp.getString().equalsIgnoreCase(ToolConstants.JSON_META_CONTAINER_FILE)
+							|| jp.getString().equalsIgnoreCase(ToolConstants.JSON_META_BOUNDARY_VALUE)){
+						key = jp.getString();
+					} else {
+						throw new GridStoreCommandException("'"+jp.getString()+"' is not the key of '"+ToolConstants.JSON_META_TIME_INTERVAL_INFO+"'."
+								+": line(about)=["+jp.getLocation().getLineNumber()+"]");
+					}
+					break;
+
+				case VALUE_STRING:
+					// 値が文字列値の場合(import対象のファイル名、対象ファイルのインターバル)
+					String value = jp.getString();
+
+					if (key.equalsIgnoreCase(ToolConstants.JSON_META_CONTAINER_FILE)) {
+						containerFileName = value;
+					} else if (key.equalsIgnoreCase(ToolConstants.JSON_META_BOUNDARY_VALUE)) {
+						boundaryValue = value;
+					} else {
+							throw new GridStoreCommandException("The value of '"+ key + "' is invalid."
+									+": line(about)=["+jp.getLocation().getLineNumber()+"]");
+					}
+					break;
+
+				case VALUE_NUMBER:
+						throw new GridStoreCommandException("The type of '"+ key + "' must be string."
+								+": line(about)=["+jp.getLocation().getLineNumber()+"]");
+
+				case VALUE_TRUE:
+				case VALUE_FALSE:
+						throw new GridStoreCommandException("The type of '"+ key + "' must be string."
+								+": line(about)=["+jp.getLocation().getLineNumber()+"]");
+
+				case VALUE_NULL:
+					// NULLの指定は未設定とする
+					break;
+				default:
+					throw new GridStoreCommandException("'"+ToolConstants.JSON_META_TIME_INTERVAL_INFO+"' is invalid."
+							+": event=["+event+"] line(about)=["+jp.getLocation().getLineNumber()+"]");
+			}
+			if ( event == Event.END_OBJECT ) break;
+		}
+		
+		ti = new TimeIntervalInfo(containerFileName, boundaryValue);
+		
+		return ti;
+	}
 
 /**
  * コンテナ情報をJSON文字列に変換します。
@@ -1634,6 +1773,11 @@ private JsonGenerator buildJson(ToolContainerInfo cInfo, JsonGenerator gen) thro
 			gen.writeStartObject();
 			gen.write(ToolConstants.JSON_META_COLUMN_NAME, cInfo.getColumnInfo(j).getName());
 			gen.write(ToolConstants.JSON_META_COLUMN_TYPE,convertColumnType(cInfo.getColumnInfo(j).getType()));
+			ColumnInfo columnInfo = cInfo.getColumnInfo(j);
+			if (columnInfo.getType() == GSType.TIMESTAMP && isPreciseColumn(columnInfo)) {
+				TimeUnit precision = columnInfo.getTimePrecision();
+				gen.write(ToolConstants.JSON_META_COLUMN_TIME_PRECISION, precision.name());
+			}
 			Boolean nullable = cInfo.getColumnInfo(j).getNullable();
 			if ( nullable == null ) {
 				gen.writeNull(ToolConstants.JSON_META_COLUMN_CSTR_NOTNULL);
@@ -1833,6 +1977,22 @@ private JsonGenerator buildJson(ToolContainerInfo cInfo, JsonGenerator gen) thro
 		gen.write(ToolConstants.JSON_META_EXPIRATION_TIME_UNIT, expInfo.getTimeUnit().toString());
 	}
 
+	//------------------------------------
+	// タイムインターバル情報書き込み
+	//------------------------------------	
+	if ( cInfo.getTimeIntervalInfos() == null || cInfo.getTimeIntervalInfos().size() == 0){
+		// 出力しない。
+	} else {
+		gen.writeStartArray(ToolConstants.JSON_META_TIME_INTERVAL_INFO);
+		for (TimeIntervalInfo splitFileInfo : cInfo.getTimeIntervalInfos()){
+			gen.writeStartObject();
+			gen.write(ToolConstants.JSON_META_CONTAINER_FILE, splitFileInfo.getContainerFile());
+			gen.write(ToolConstants.JSON_META_BOUNDARY_VALUE, splitFileInfo.getBoundaryValue());
+			gen.writeEnd();
+		}
+		gen.writeEnd();
+	}
+	
 	gen.writeEnd();
 
 	return gen;
@@ -1872,6 +2032,12 @@ public static GSType convertStringToColumnType(String type) throws GridStoreComm
 			return GSType.TIMESTAMP_ARRAY;
 		} else if (type.equalsIgnoreCase(ToolConstants.COLUMN_TYPE_BOOL)) {
 			return GSType.BOOL;
+		} else if(type.equalsIgnoreCase(ToolConstants.COLUMN_TYPE_TIMESTAMP_MILI)) {
+			return GSType.TIMESTAMP;
+		} else if(type.equalsIgnoreCase(ToolConstants.COLUMN_TYPE_TIMESTAMP_MICRO)) {
+			return GSType.TIMESTAMP;
+		} else if(type.equalsIgnoreCase(ToolConstants.COLUMN_TYPE_TIMESTAMP_NANO)) {
+			return GSType.TIMESTAMP;
 		}
 		return GSType.valueOf(type.toUpperCase().trim());
 
@@ -1881,6 +2047,125 @@ public static GSType convertStringToColumnType(String type) throws GridStoreComm
 		throw new GridStoreCommandException("Error occurded in convert to type"+ ": type=["
 				+type+"] msg=[" + e.getMessage()+"]", e);
 	}
+}
+
+/**
+ * Convert string to value of TimeUnit type
+ * @param unit the unit of precision
+ * @return TimeUnit value
+ * @throws GridStoreCommandException
+ */
+public static TimeUnit convertStringToTimeUnit(String unit) throws GridStoreCommandException {
+	try {
+		return TimeUnit.valueOf(unit.toUpperCase().trim());
+	} catch (Exception e) {
+		throw new GridStoreCommandException("Error occurded in converting to time unit"
+				+ ": unit=[" + unit + "] msg=[" + e.getMessage() + "]", e);
+	}
+}
+
+/**
+ * Convert precise timestamp type to TimeUnit type
+ *     TIMESTAMP(3) -> MILLISECOND
+ *     TIMESTAMP(6) -> MICROSECOND
+ *     TIMESTAMP(9) -> NANOSECOND
+ * @param preciseTimestampType the precise timestamp type string
+ * @return TimeUnit
+ * @throws GridStoreCommandException
+ */
+public static TimeUnit convertTimestampStringToTimeUnit(String preciseTimestampType) throws GridStoreCommandException {
+	String type = preciseTimestampType.trim();
+	if(type.equalsIgnoreCase(ToolConstants.COLUMN_TYPE_TIMESTAMP_MILI)) {
+		return TimeUnit.MILLISECOND;
+	} else if(type.equalsIgnoreCase(ToolConstants.COLUMN_TYPE_TIMESTAMP_MICRO)) {
+		return TimeUnit.MICROSECOND;
+	} else if(type.equalsIgnoreCase(ToolConstants.COLUMN_TYPE_TIMESTAMP_NANO)) {
+		return TimeUnit.NANOSECOND;
+	} else {
+		throw new GridStoreCommandException("Error occurded in convert to type"
+				+ ": type=[" + type + "] msg=[Not a precise timestamp type]");
+	}
+}
+
+/**
+ * Convert TimeUnit to String of type Timestamp in uppercase
+ *     TimeUnit.MILLISECOND -> TIMESTAMP(3)
+ *     TimeUnit.MICROSECOND -> TIMESTAMP(6)
+ *     TimeUnit.NANOSECOND  -> TIMESTAMP(9)
+ * @param timeUnit
+ * @return String of TIMESTAMP with number
+ * @throws GridStoreCommandException
+ */
+public static String convertTimeunitToTimestampType(TimeUnit timeUnit) throws GridStoreCommandException {
+	switch (timeUnit) {
+		case MILLISECOND :
+			return ToolConstants.COLUMN_TYPE_TIMESTAMP_MILI.toUpperCase();
+		case MICROSECOND :
+			return ToolConstants.COLUMN_TYPE_TIMESTAMP_MICRO.toUpperCase();
+		case NANOSECOND :
+			return ToolConstants.COLUMN_TYPE_TIMESTAMP_NANO.toUpperCase();
+		default :
+			throw new GridStoreCommandException("Error occurded in convert time unit"
+					+ ": type=[" + timeUnit.name() + "] msg=[Not a time unit]");
+	}
+}
+
+/**
+ * Check if a string is TIMESTAMP type  has suffix
+ * The valid string is "TIMESTAMP(3)", "TIMESTAMP(6)", and "TIMESTAMP(9)"
+ * @param timestampTypeHasSuffix the TIMESTAMP type  has suffix
+ * @return true if the given string is timestamp type with number
+ */
+public static boolean isTimestampStringInSeconds(String timestampTypeHasSuffix) {
+	String type = timestampTypeHasSuffix.trim();
+	return ToolConstants.COLUMN_TYPE_TIMESTAMP_MICRO.equalsIgnoreCase(type)
+			|| ToolConstants.COLUMN_TYPE_TIMESTAMP_NANO.equalsIgnoreCase(type)
+			|| ToolConstants.COLUMN_TYPE_TIMESTAMP_MILI.equalsIgnoreCase(type);
+}
+
+/**
+ * Check if timeunit is MILLISECOND or MICROSECOND or NANOSECOND
+ * @param timeUnit
+ * @return true if time unit is MILLISECOND or MICROSECOND or NANOSECOND
+ */
+public static boolean isTimestampUnit(TimeUnit timeUnit) {
+	return TimeUnit.MILLISECOND == timeUnit
+			|| TimeUnit.MICROSECOND == timeUnit
+			|| TimeUnit.NANOSECOND == timeUnit;
+}
+
+/**
+ * Check if a column is precise timestamp
+ * @param columnInfo
+ * @return true if the given column is precise timestamp
+ */
+public static boolean isPreciseColumn(ColumnInfo columnInfo) {
+	TimeUnit unit = columnInfo.getTimePrecision();
+	return  unit == TimeUnit.MICROSECOND || unit == TimeUnit.NANOSECOND;
+}
+
+/**
+ * Get the DateTimeFormatter base on time unit
+ * @param timePrecision
+ * @return date time format of time unit
+ */
+public static DateTimeFormatter getDateTimeFormatter(TimeUnit timeUnit) {
+  String format = "";
+  switch(timeUnit)
+  {
+    case MILLISECOND:
+      format = ToolConstants.DATE_FORMAT_MILLISECOND;
+      break;
+    case MICROSECOND:
+      format = ToolConstants.DATE_FORMAT_MICROSECOND;
+      break;
+    case NANOSECOND:
+      format = ToolConstants.DATE_FORMAT_NANOSECOND;
+      break;
+    default:
+      throw new IllegalArgumentException("Invalid time unit. Valid unit is MILLISECOND, MICROSECOND and NANOSECOND.");
+  }
+  return DateTimeFormatter.ofPattern(format);
 }
 
 /**
