@@ -6,10 +6,12 @@ The cluster operation control command interpreter (hereinafter referred to gs_sh
 
 The following can be carried out by gs_sh.
 -   Operation control of GridDB cluster
-    -   Displaying status
+    -   Definition of GridDB cluster
+    -   Starting and stopping a GridDB node and cluster
+    -   Displaying status and logs
 -   GridDB cluster data operation
     -   Database and user management
-    -   Displaying collection and trigger
+    -   Container management
     -   Index setting, deletion
     -   Search using a TQL/SQL
 
@@ -27,8 +29,7 @@ Carry out the following preparations before using gs_sh.
 
 -   Remote connection setting using SSH
     -   This setting is necessary in order to connect to each GridDB node execution environment from the gs_sh execution environment as an OS user "gsadm".
-
-    　See the manual of each OS for details on the SSH connection procedure.
+      \* See the manual of each OS for details on the SSH connection procedure.
 
 ### gs_sh start-up
 
@@ -41,7 +42,7 @@ There are two types of start modes in gs_sh.
     $ gs_sh
     //execution of sub-command "version"
     gs> version
-    gs_sh version 2.0.0
+    gs_sh version 5.0.0
     ```
 
 - Startup in batch mode
@@ -62,7 +63,7 @@ There are two types of start modes in gs_sh.
 - Extension of script file is gsh.
 - A script file is described using the character code UTF-8.
 
-　
+  
 
 ## Definition of a GridDB cluster
 
@@ -73,7 +74,7 @@ The definition below is required in advance when executing a GridDB cluster oper
 
 An explanation of node variables, cluster variables, and how to define user data is given below. An explanation of the definition of an arbitrary variable, display of variable definition details, and how to save and import variable definition details in a script file is also given below.
 
-　
+  
 
 ### Definition of node variable
 
@@ -110,7 +111,7 @@ Define the IP address and port no. of a GridDB node in the node variable.
   - IP address: /system/serviceAddress
   - Port no. : /system/servicePort
 
-　　
+    
 
 ### Definition of cluster variable
 
@@ -153,7 +154,7 @@ Define the GridDB cluster configuration in the cluster variable.
 
     *All settings in the cluster definition file of a node constituting a GridDB cluster have to be configured the same way. If the settings are configured differently, the cluster cannot be composed.
 
-　
+  
 
 In addition, node variables can be added or deleted for a defined cluster variable.
 
@@ -183,7 +184,7 @@ In addition, node variables can be added or deleted for a defined cluster variab
 [Memo]
 - Prepend a "$" to the node variable name.
 
-　
+  
 
 ### Defining the SQL connection destination of a cluster
 
@@ -224,7 +225,7 @@ Define the SQL connection destination in the GridDB cluster configuration.  **Th
   - SQL address: /sql/notificationAddress
   - SQL port no.:/sql/notificationPort
 
-　
+  
 
 ### Definition of a user
 
@@ -234,7 +235,7 @@ Define the user and password to access the GridDB cluster.
 
   | |
   |-|
-  | setuser \<User name\> \<Password\>|
+  | setuser \<User name\> \<Password\> [\<gsadm password\>] |
 
 - Argument
 
@@ -242,12 +243,13 @@ Define the user and password to access the GridDB cluster.
   |------------------|---------------------------------------------------------------------|
   | \<User name\>  | Specify the name of the user accessing the GridDB cluster.                  |
   | \<Password\>   | Specify the corresponding password.                                    |
+  | gsadm password | Specify the password of the OS user 'gsadm'. This may be omitted if start node (startnode sub-command) is not going to be executed. |
 
 - Example:
 
   ``` example
-  //Define the user and password to access a GridDB cluster
-  gs> setuser admin admin
+  //Define the user, password and gsadm password to access a GridDB cluster
+  gs> setuser admin admin gsadm
   ```
 
 [Memo]
@@ -257,10 +259,11 @@ Define the user and password to access the GridDB cluster.
   |------------|-----------------|
   | user          | \<User name\>        |
   | password      | \<Password\>      |
+  | ospassword    | gsadm password |
 
 - Multiple users cannot be defined. The user and password defined earlier will be overwritten. When operating multiple GridDB clusters in gs_sh, reset the user and password with the setuser sub-command every time the connection destination cluster is changed.
 
-　　
+    
 
 ### Definition of arbitrary variables
 
@@ -292,7 +295,7 @@ Define an arbitrary variable.
 - Node variable and cluster variable settings can also be cleared with the set sub-command.
 - Only single-byte alphanumeric characters and the symbol "_" can be used in the variable name.
 
-　
+  
 
 ### Displaying the variable definition
 
@@ -332,7 +335,7 @@ Display the detailed definition of the specified variable.
 [Memo]
 - Password character string will not appear. Display replaced by "\*\*\*".
 
-　
+  
 
 ### Saving a variable definition in a script file
 
@@ -363,7 +366,7 @@ Save the variable definition details in the script file.
 - Contents related to the user definition (user, password, gsadm password) will not be output to the script file.
 - Contents in the .gsshrc script file will be automatically imported during gs_sh start-up.
 
-　
+  
 
 ### Executing a script file
 
@@ -401,7 +404,7 @@ Connect to the running GridDB cluster and automatically define a cluster variabl
 
   | |
   |-|
-  | sync IP address port number　\[cluster variable name \[node variable\] \] |
+  | sync IP address port number  \[cluster variable name \[node variable\] \] |
 
 - Argument
 
@@ -441,11 +444,527 @@ Connect to the running GridDB cluster and automatically define a cluster variabl
 
 ## GridDB cluster operation controls
 
-The following operations can be executed as functions to manage GridDB cluster operations.
-- Displaying SQL processing under execution
-- Displaying executing event
-- Displaying connection
-- SQL cancellation
+The following operations can be executed by the administrator user only as functions to manage GridDB cluster operations.
+- GridDB node start, stop, join cluster, leave cluster (startnode/stopnode/joincluster/leavecluster)
+- GridDB cluster operation start, operation stop (startcluster/stopcluster)
+- Get various data
+
+
+<a id="cluster_and_node_status"></a>
+### Status
+
+This section explains the status of a GridDB node and GridDB cluster.
+
+A cluster is composed of 1 or more nodes.
+A node status represents the status of the node itself e.g. start or stop etc.
+A cluster status represents the acceptance status of data operations from a client. A cluster status is determined according to the status of the node group constituting the cluster.
+
+An example of the change in the node status and cluster status due to a gs_sh sub-command operation is shown below.
+A cluster is composed of 4 nodes.
+When the nodes constituting the cluster are started (startnode), the node status changes to "Start". When the cluster is started after starting the nodes (startcluster), each node status changes to "Join", and the cluster status also changes to "In Operation".
+
+A detailed explanation of the node status and cluster status is given below.
+
+**Node status**
+
+Node status changes to "Stop", "Start" or "Join" depending on whether a node is being started, stopped, joined or detached.
+If a node has joined a cluster, there are 2 types of node status depending on the status of the joined cluster.
+
+| Status | Status name | Note                                                                     |
+|------------|--------------|--------------------------------------------------------------------------|
+| Join   | SERVICING   | Node is joined to the cluster, and the status of the joined cluster is "In Operation" |
+|            | WAIT        | Node is joined to the cluster, and the status of the joined cluster is "Halted" |
+| Start  | STARTED     | Node is started but has not joined a cluster                           |
+|            | STARTING    | Starting node                                                             |
+| Stop   | STOP        | Stopped node                                                               |
+|            | STOPPING    | Stopping node                                                         |
+
+  
+
+**Cluster status**
+
+GridDB cluster status changes to "Stop", "Halted" or "In Operation" depending on the operation start/stop status of the GridDB cluster or the join/leave operation of the GridDB node.  Data operations from the client can be accepted only when the GridDB cluster status is "In Operation".
+
+
+| Status | Status name | Note               |
+|------------|----------------------------|-----------------------------------------------------------------------------|
+| In Operation | SERVICE_STABLE   | All nodes defined in the cluster configuration have joined the cluster        |
+|            | SERVICE_UNSTABLE | More than half the nodes defined in the cluster configuration have joined the cluster     |
+| Halted       | WAIT              | Half and more of the nodes defined in the cluster configuration have left the cluster                                    |
+|            | INIT_WAIT        | 1 or more of the nodes defined in the cluster configuration have left the cluster (when the cluster is operated for the first time, the status will not change to "In Operation" unless all nodes have joined the cluster) |
+| Stop         | STOP              | All nodes defined in the cluster configuration have left the cluster          |
+
+The GridDB cluster status will change from "Stop" to "In Operation" when all nodes constituting the GridDB cluster are allowed to join the cluster. In addition, the GridDB cluster status will change to "Halted" when half and more of the nodes have left the cluster, and "Stop" when all the nodes have left the cluster.
+
+Join and leave operations (which affect the cluster status) can be applied in batch to all the nodes in the cluster, or to individual node.
+
+| When the operating target is a single node | Operation                                                                                                                                            | When the operating targets are all nodes                                |
+|------|------------------------------------------------------------------|----------------------------------------------------------|
+| Join                                       | [startcluster](#batch_entry_of_nodes_in_a_cluster) : Batch entry of a group of nodes that are already operating but have not joined the cluster yet. | [joincluster](#node_entry_in_a_cluster) : Entry by a node that is in operation but has not joined the cluster yet. |
+| Leave                                      | [stopcluster](#batch_detachment_of_nodes_from_a_cluster) : Batch detachment of a group of nodes joined to a cluster.                                 | [leavecluster](#detaching_a_node_from_a_cluster) : Detachment of a node joined to a cluster.   |
+
+[Memo]
+-   Join and leave cluster operations can be carried out on nodes that are in operation only.
+-   A node which has failed will be detached automatically from the GridDB cluster.
+-   The GridDB cluster status can be checked with the cluster status data display sub-command ([configcluster](#displaying_cluster_status_data)).
+
+
+
+Details of the various operating methods are explained below.
+
+### Starting a node
+
+Start the specified node.
+
+- Sub-command
+
+  | |
+  |-|
+  | startnode \<Node variable\> | \<Cluster variable\> [ \<Timeout time in sec.\> ] |
+
+- Argument
+
+  | Argument      | Note                                                                                                |
+  |--------------------------|-----------------------------------------------------------------------------------------------------|
+  | Node variable \| cluster variable | Specify the node to start by its node variable or cluster variable. <br>If the cluster variable is specified, all nodes defined in the cluster variable will be started.                          |
+  | Timeout time in sec. | Set the number of seconds the command or a script is allowed to run. <br>Timeout time = -1, return to the console immediately without waiting for the command to finish. Timeout time = 0 or not set, no timeout time, wait for the command to finish indefinitely. |
+
+- Example:
+
+  ``` example
+  //Start the node
+  gs> startnode $node1
+  The GridDB node node1 is starting up. 
+  All GridDB node has been started.
+  ```
+
+[Memo]
+- Command can be executed by an administrator user only.
+- Prepend a "$" to the node variable name or the cluster variable name.
+- The cluster start process (startcluster sub-command) can be executed in batches by waiting for the start process to complete.
+
+
+
+### Stopping a node
+
+Stop the specified node.
+
+- Sub-command
+
+  | |
+  |-|
+  | stopnode \<Node variable\> | \<Cluster variable\> [\<Timeout time in sec\>] |
+
+- Argument
+
+  | Argument      | Note                                                                                                |
+  |----------------------|-----------------------------------------------------------------------------------------------------|
+  | Node variable \| Cluster variable | Specify the node to stop by its node variable or cluster variable. <br>If the cluster variable is specified, all nodes defined in the cluster variable will be stopped.                          |
+  | Timeout time in sec. | Set the number of seconds the command or a script is allowed to run. <br>Timeout time = -1, return to the console immediately without waiting for the command to finish. Timeout time = 0 or not set, no timeout time, wait for the command to finish indefinitely. |
+
+- Example:
+
+  ``` example
+  //stop node
+  gs> stopnode $node1
+  The GridDB node node1 is stopping down. 
+  The GridDB node node1 has started stopping down. 
+  Waiting for a node to complete the stopping processing. 
+  All GridDB node has been stopped.
+  ```
+
+In addition, the specified node can be forced to stop as well.
+
+- Sub-command
+
+  | |
+  |-|
+  | stopnodeforce \<Node variable\> | \<Cluster variable\> [\<Timeout time in sec\>] |
+
+- Argument
+
+  | Argument      | Note                                                                                                |
+  |----------------------|-----------------------------------------------------------------------------------------------------|
+  | Node variable \| Cluster variable | Specify the node to stop by force by its node variable or cluster variable. <br>If the cluster variable is specified, all nodes defined in the cluster variable will be stopped by force.|
+  | Timeout time in sec. | Set the number of seconds the command or a script is allowed to run. <br>Timeout time = -1, return to the console immediately without waiting for the command to finish. Timeout time = 0 or not set, no timeout time, wait for the command to finish indefinitely. |
+
+- Example:
+
+  ``` example
+  //stop node by force
+  gs> stopnodeforce $node1
+  The GridDB node node1 is stopping down. 
+  The GridDB node node1 has started stopping down. 
+  Waiting for a node to complete the stopping processing. 
+  All GridDB node has been stopped.
+  ```
+
+[Memo]
+- Command can be executed by an administrator user only.
+- Prepend a "$" to the node variable name or the cluster variable name.
+- In a stopnode sub-command, nodes which have joined the GridDB cluster cannot be stopped. In a stopnodeforce command, nodes which have joined the GridDB cluster can also be stopped but data may be lost.
+
+
+<a id="batch_entry_of_nodes_in_a_cluster"></a>
+### Batch entry of nodes in a cluster
+
+Explanation on how to add batch nodes into a cluster is shown below. In this case when a group of unattached but operating nodes are added to the cluster, the cluster status will change to "In Operation".
+
+- Sub-command
+
+  | |
+  |-|
+  | startcluster \<Cluster variable\> [\<Timeout time in sec.\>] |
+
+- Argument
+
+  | Argument      | Note                                                                                                |
+  |------------------|-----------------------------------------------------------------------------------------------------|
+  | Cluster variable | Specify a GridDB cluster by its cluster variable.                                                        |
+  | Timeout time in sec. | Set the number of seconds the command or a script is allowed to run. <br>Timeout time = -1, return to the console immediately without waiting for the command to finish. Timeout time = 0 or not set, no timeout time, wait for the command to finish indefinitely. |
+
+- Example:
+
+    ``` example
+    //start GridDB cluster
+    gs> startcluster $cluster1
+    Waiting for the GridDB cluster to start. 
+    The GridDB cluster has been started.
+    ```
+
+[Memo]
+- Command can be executed by an administrator user only.
+- Prepend a "$" to the cluster variable name.
+- To change the status of a GridDB cluster from "Stop" to "In Operation", all nodes must be allowed to join the cluster. Check beforehand that all nodes constituting the GridDB cluster are in operation.
+
+
+
+<a id="batch_detachment_of_nodes_from_a_cluster"></a>
+### Batch detachment of nodes from a cluster
+
+To stop a GridDB cluster, simply make the attached nodes leave the cluster using the stopcluster command.
+
+- Sub-command
+
+  | |
+  |-|
+  | stopcluster \<Cluster variable\> [\<Timeout time in sec.\>] |
+
+- Argument
+
+  | Argument      | Note                                                                                                |
+  |------------------|-----------------------------------------------------------------------------------------------------|
+  | Cluster variable | Specify a GridDB cluster by its cluster variable.                                                        |
+  | Timeout time in sec. | Set the number of seconds the command or a script is allowed to run. <br>Timeout time = -1, return to the console immediately without waiting for the command to finish. Timeout time = 0 or not set, no timeout time, wait for the command to finish indefinitely. |
+
+- Example:
+
+  ``` example
+  //stop GridDB cluster
+    gs> stopcluster $cluster1
+    Waiting for the GridDB cluster to stop. 
+  The GridDB cluster has been stopped.
+  ```
+
+[Memo]
+- Command can be executed by an administrator user only.
+- Prepend a "$" to the cluster variable name.
+
+
+
+<a id="node_entry_in_a_cluster"></a>
+### Node entry in a cluster
+
+Join a node that is temporarily left from the cluster by leavecluster sub-command or failure into the cluster.
+
+- Sub-command
+
+  | |
+  |-|
+  | joincluster \<Cluster variable\> \<Node variable\> [\<Timeout time in sec.\>] |
+
+- Argument
+
+  | Argument      | Note                                                                                                |
+  |------------------|-----------------------------------------------------------------------------------------------------|
+  | Cluster variable | Specify a GridDB cluster by its cluster variable.                                                        |
+  | Node variable | Specify the node to join by its node variable.                                                        |
+  | Timeout time in sec. | Set the number of seconds the command or a script is allowed to run. <br>Timeout time = -1, return to the console immediately without waiting for the command to finish. Timeout time = 0 or not set, no timeout time, wait for the command to finish indefinitely. |
+
+- Example:
+
+  ``` example
+  //Start the node
+    gs> startnode $node2
+    The GridDB node node2 is starting up. 
+  All GridDB node has been started. 
+  //join node
+joincluster $cluster1 $node2
+Waiting for the GridDB node to join the GridDB cluster. 
+  The GridDB node has joined to the GridDB cluster.
+  ```
+
+[Memo]
+- Command can be executed by an administrator user only.
+- Prepend a "$" to the cluster variable name and the node variable name.
+- Only nodes that are in operation can join a GridDB cluster. Check that the nodes joining a cluster are in operation.
+
+
+
+<a id="detaching_a_node_from_a_cluster"></a>
+### Detaching a node from a cluster
+
+Detach the specified node from the cluster. Also force the specified active node to be detached from the cluster.
+
+- Sub-command
+
+  | |
+  |-|
+  | leavecluster \<Node variable\> [\<Timeout time in sec.\>] |
+  | leaveclusterforce \<Node variable\> [\<Timeout time in sec.\>] |
+
+- Argument
+
+  | Argument      | Note                                                                                                |
+  |------------------|-----------------------------------------------------------------------------------------------------|
+  | Node variable | Specify the node to detach by its node variable.                                                          |
+  | Timeout time in sec. | Set the number of seconds the command or a script is allowed to run. <br>Timeout time = -1, return to the console immediately without waiting for the command to finish. Timeout time = 0 or not set, no timeout time, wait for the command to finish indefinitely. |
+
+- Example:
+
+  ``` example
+  //leave node
+    gs> leavecluster $node2
+    Waiting for the GridDB node to leave the GridDB cluster. 
+  The GridDB node has leaved the GridDB cluster.
+  ```
+
+[Memo]
+- Command can be executed by an administrator user only.
+- Prepend a "$" to the node variable name.
+
+<a id="displaying_cluster_status_data"></a>
+### Displaying cluster status data
+
+Display the status of an active GridDB cluster, and each node constituting the cluster.
+
+- Sub-command
+
+  | |
+  |-|
+  | configcluster \<Cluster variable\> |
+
+- Argument
+
+  | Argument      | Note                                         |
+  |--------------|----------------------------------------------|
+  | Cluster variable | Specify a GridDB cluster by its cluster variable. |
+
+- Example:
+
+  ``` example
+  //display cluster data
+    gs> configcluster $cluster1
+    Name                  : cluster1
+    ClusterName           : defaultCluster
+    Designated Node Count : 4
+    Active Node Count     : 4
+    ClusterStatus         : SERVICE_STABLE
+    
+    Nodes:
+      Name    Role Host:Port              Status
+    -------------------------------------------------
+      node1     F  10.45.237.151:10040    SERVICING
+      node2     F  10.45.237.152:10040    SERVICING
+      node3     M  10.45.237.153:10040    SERVICING
+      node4     F  10.45.237.154:10040    SERVICING
+  ```
+
+[Memo]
+- Command can be executed by an administrator user only.
+- ClusterStatus will be one of the following.
+  - INIT_WAIT : Waiting for cluster to be composed
+  - SERVICE_STABLE : In operation
+  - SERVICE_UNSTABLE : Unstable (specified number of nodes constituting a cluster has not been reached)
+- Role will be one of the following.
+  - M: MASTER
+  - F: FOLLOWER
+  - S: SUB_CLUSTER (temporary status in a potential master candidate)
+  - \-: Not in operation
+
+  
+
+### Displaying configuration data
+
+Display the cluster configuration data.
+
+- Sub-command
+
+  | |
+  |-|
+  | config \<Node variable\> |
+
+- Argument
+
+  | Argument      | Note                                                                 |
+  |------------|----------------------------------------------------------------------|
+  | Node variable | Specify the node belonging to a GridDB cluster to be displayed with a node variable. |
+
+- Example:
+
+  ``` example
+  //display cluster configuration data
+    gs> config $node1
+    {
+      "follower" : [ {
+        "address" : "10.45.237.151",
+        "port" : 10040
+      }, {
+        "address" : "10.45.237.152",
+        "port" : 10040
+      }, {
+        "address" : "10.45.237.153",
+        "port" : 10040
+      }, {
+        "address" : "10.45.237.154",
+        "port" : 10040
+      } ],
+      "master" : {
+        "address" : "10.45.237.155",
+        "port" : 10040
+      },
+      "multicast" : {
+        "address" : "239.0.5.111",
+        "port" : 33333
+      },
+      "self" : {
+        "address" : "10.45.237.150",
+        "port" : 10040,
+        "status" : "ACTIVE"
+      }
+    }
+  ```
+
+[Memo]
+- Command can be executed by an administrator user only.
+- Prepend a "$" to the node variable name.
+- The output contents differ depending on the version of the GridDB node. Check with the support desk for details.
+
+  
+
+### Displaying node status
+
+Display the node configuration data.
+
+- Sub-command
+
+  | |
+  |-|
+  | stat \<Node variable\> |
+
+- Argument
+
+  | Argument      | Note                                         |
+  |------------|----------------------------------------------|
+  | Node variable | Specify the node to display by its node variable. |
+
+- Example:
+
+  ``` example
+  //display node status, statistical data
+    gs> stat $node1
+    {
+      "checkpoint" : {
+        "archiveLog" : 0,
+        "backupOperation" : 0,
+        "duplicateLog" : 0,
+        "endTime" : 1413852025843,
+        "mode" : "NORMAL_CHECKPOINT",
+                 :
+                 :
+    }
+  ```
+
+[Memo]
+- Command can be executed by an administrator user only.
+- Prepend a "$" to the node variable name.
+- The output contents differ depending on the version of the GridDB node.
+
+  
+
+### Displaying event log
+
+Displays the log of the specified node.
+
+- Sub-command
+
+  | |
+  |-|
+  | logs \<Node variable\> |
+
+- Argument
+
+  | Argument      | Note                                         |
+  |------------|----------------------------------------------|
+  | Node variable | Specify the node to display by its node variable. |
+
+- Example:
+
+  ``` example
+  //display log of node
+    gs> logs $node0
+    2013-02-26T13:45:58.613+0900 c63x64n1 4051 INFO SYSTEM_SERVICE ../server/system_service.cpp void SystemService::joinCluster(const char8_t*, uint32_t) line=179 : joinCluster requested (clusterName="defaultCluster", minNodeNum=1)
+    2013-02-26T13:45:58.616+0900 c63x64n1 4050 INFO SYSTEM_SERVICE ../server/system_service.cpp virtual void SystemService::JoinClusterHandler::callback(EventEngine&, util::StackAllocator&, Event*, NodeDescriptor) line=813 : ShutdownClusterHandler called g
+    2013-02-26T13:45:58.617+0900 c63x64n1 4050 INFO SYSTEM_SERVICE ../server/system_service.cpp void SystemService::completeClusterJoin() line=639 : completeClusterJoin requested
+    2013-02-26T13:45:58.617+0900 c63x64n1 4050 INFO SYSTEM_SERVICE ../server/system_service.cpp virtual void SystemService::CompleteClusterJoinHandler::callback(EventEngine&, util::StackAllocator&, Event*, NodeDescriptor) line=929 : CompleteClusterJoinHandler called
+  ```
+
+  
+
+The output level of a log can be displayed and changed.
+
+- Sub-command
+
+  | |
+  |-|
+  | logconf \<Node variable\> \[\<Category name\> \[\<Log level\>\]\] |
+
+- Argument
+
+  | Argument      | Note                                                                                               |
+  |------------|----------------------------------------------------------------------------------------------------|
+  | Node variable | Specify the node to operate by its node variable.                                                       |
+  | Category name | Specify the log category name subject to the operation. Output level of all log categories will be displayed by default. |
+  | Log level  | Specify the log level to change the log level of the specified category. <br>Log level of the specified category will be displayed by default.   |
+
+- Example:
+
+  ``` example
+  //display log level of node
+    gs> logconf $node0
+    {
+      "CHECKPOINT_SERVICE" : "INFO",
+      "CHUNK_MANAGER" : "ERROR",
+             :
+    }
+    
+    // change the log level
+    gs> logconf $node0 SYSTEM WARNING
+    
+    // display the log level specifying the category name
+    gs> logconf $node0 SYSTEM
+    {
+      "SYSTEM" : "WARNING"
+    }
+  ```
+
+[Memo]
+- Command can be executed by an administrator user only.
+- Log levels are ERROR, WARNING, INFO, and DEBUG. Be sure to follow the instructions of the support desk when changing the log level.
+- Log level is initialized by restarting the node. Changes to the log level are not saved.
+- Batch changes cannot be made to the log level of multiple categories.
+
+  
 
 ### Displaying SQL processing under execution
 
@@ -484,8 +1003,8 @@ Display the SQL processing under execution.
 [Memo]
 - For start time, the value that reflects the time zone set by the settimezone subcommand is displayed. If the time zone is not set, the value that reflects the default time zone value is displayed.
 
-　
-　
+  
+  
 ### Displaying executing event
 
 Display the event list executed by the thread in each node in a cluster.
@@ -517,7 +1036,7 @@ Display the event list executed by the thread in each node in a cluster.
 [Memo]
 - For start time, the value that reflects the time zone set by the settimezone subcommand is displayed. If the time zone is not set, the value that reflects the default time zone value is displayed.
 
-　
+  
 
 ### Displaying connection
 
@@ -546,7 +1065,7 @@ Display the list of connections.
 [Memo]
 - For creation time, the value reflecting the time zone set by the settimezone subcommand is displayed. If the time zone is not set, the value that reflects the default time zone value is displayed.
 
-　
+  
 
 ### SQL cancellation
 
@@ -573,7 +1092,7 @@ Cancel the SQL processing in progress.
 [Memo]
 - Command can be executed by an administrator user only.
 
-　
+  
 
 ## Data operation in a database
 
@@ -604,16 +1123,16 @@ Establish connection to a GridDB cluster to execute a data operation.
   //connect to GridDB cluster
     //for NoSQL
     gs> connect $cluster1
-    The connection attempt was successful(NoSQL).  
+    The connection attempt was successful(NoSQL). 
   gs[public]>
     
     gs> connect $cluster1 userDB
-    The connection attempt was successful(NoSQL).  
+    The connection attempt was successful(NoSQL). 
   gs[userDB]>
     
     //For NewSQL (configure both NoSQL/NewSQL interfaces)
     gs> connect $cluster1
-    The connection attempt was successful(NoSQL).  
+    The connection attempt was successful(NoSQL). 
   The connection attempt was successful(NewSQL). 
   gs[public]>
   ```
@@ -626,7 +1145,7 @@ Establish connection to a GridDB cluster to execute a data operation.
 - If the SQL connection destination is specified (execution of setclustersql sub-command), SQL connection is also carried out.
 - If the time zone setting is changed with the settimezone subcommand after executing the connect subcommand, the changed timezone setting is not reflected until the connect subcommand is executed again. After changing the time zone setting, execute the connect subcommand again.
 
-　
+  
 
 ### Search (TQL)
 
@@ -649,8 +1168,8 @@ Execute a search and retain the search results.
 
   ``` example
   //execute a search
-    gs[public]> tql c001 select *;
-    5 results. (25 ms) (25 ms)
+  gs[public]> tql c001 select *;
+  5 results. (25 ms)
   ```
 
 [Memo]
@@ -659,8 +1178,7 @@ Execute a search and retain the search results.
 - Display the elapsed time of query as milliseconds.
 - Retain the latest search result. Search results are discarded when a tql or sql sub-command is executed.
 - See the chapter on TQL Syntax and Calculation Functions" in the ["GridDB TQL Reference"](https://github.com/griddb/docs-en/blob/master/manuals/GridDB_TQL_Reference.md) for the TQL details.
-
-　
+  
 
 ### SQL command execution
 
@@ -690,7 +1208,7 @@ Execute an SQL command and retains the search result.
     The 1 result has been acquired.
   ```
 
-　
+  
 
 Sub-command name 'sql' can be omitted when the first word of SQL statement is one of the follows.
 -   select update insert replace delete create drop alter grant revoke pragma explain
@@ -710,8 +1228,7 @@ Sub-command name 'sql' can be omitted when the first word of SQL statement is on
   | DDL statement               | Nothing is displayed.                                                                  |
 
 - See ["GridDB SQL Reference"](https://github.com/griddb/docs-en/blob/master/manuals/GridDB_SQL_Reference.md) for the SQL details.
-
-　
+  
 
 ### Getting search results
 
@@ -767,23 +1284,23 @@ The following command gets the inquiry results and presents them in different fo
 Example:
 
   ``` example
-  //検索を実行
+  //execute a search
   gs[public]> tql c001 select *;
-  5 results.  
+  5 results.   
 
   //Get first result and display
   gs[public]> get 1
   name,status,count
   mie,true,2
-  The 1 result has been acquired.  
+  The 1 result has been acquired. 
 
   //Get second and third results and save them in a file
   gs[public]> getcsv /var/lib/gridstore/test2.csv 2
-  The 2 results had been acquired.  
+  The 2 results had been acquired. 
 
   //Get fourth result
   gs[public]> getnoprint 1
-  The 1 result has been acquired.  
+  The 1 result has been acquired. 
 
   //Get fifth result and display
   gs[public]> get 1
@@ -804,7 +1321,7 @@ Example:
   - Time zone: Time zone value set by the settimezone subcommand, if no value is set, UTC is used
   - Example: 2018-11-07T12:30:00.417Z, 2019-05-01T09:30:00.000+09:00
 
-　
+  
 
 ### Getting the execution plan
 
@@ -865,7 +1382,7 @@ In addition, the actual measurement values such as the number of processing rows
 - Since search results are not retained, search results cannot be acquired and thus there is also no need to execute a tqlclose sub-command. When the search results are required, execute a query with the tql sub-command.
 - A partitioned table (container) is not supported. If executed, an error will occur.
 
-　
+  
 
 ### Discarding search results
 
@@ -899,7 +1416,7 @@ Example:
   - When disconnecting from a GridDB cluster using a disconnect sub-command
 - An error will occur if search results are acquired (get sub-command, etc.) after they have been discarded.
 
-　
+  
 
 ### Disconnecting from a cluster
 
@@ -923,7 +1440,7 @@ Disconnect from a GridDB cluster.
 - Retained search results are discarded.
 - When disconnected, the connection database name will disappear from the prompt.
 
-　
+  
 
 ### Hit count setting
 
@@ -956,7 +1473,334 @@ Set whether to execute count query when SQL querying.
 [Memo]
 - If FALSE is specified, the response will be faster instead of displaying no hit count. The execution time is not affected by this setting.
 
-　
+  
+
+## Database management
+
+This section explains the available sub-commands that can be used for database management.  Connect to the cluster first prior to performing database management with connect sub-command. (Subcommand connect)
+
+### Creating a database
+
+Create a database with the specified name.
+
+- Sub-command
+
+  | |
+  |-|
+  | createdatabase \<Database name\> |
+
+- Argument
+
+  | Argument      | Note                                     |
+  |----------------|------------------------------------------|
+  | \<Database name\> | Specify the name of the database to be created. |
+
+- Example:
+
+  ``` example
+  //Create a database with the name "db1"
+  gs[public]> createdatabase db1
+  ```
+
+[Memo]
+- Command can be executed by an administrator user only.
+- Only the administrator user can access a database immediately after it has been created. Assign access rights to general users where necessary.
+
+  
+
+### Deleting a database
+
+Delete the specified database.
+
+- Sub-command
+
+  | |
+  |-|
+  | dropdatabase \<Database name\> |
+
+- Argument
+
+  | Argument      | Note                                     |
+  |----------------|------------------------------------------|
+  | \<Database name\> | Specify the name of the database to be deleted. |
+
+- Example:
+
+  ``` example
+  //Delete databases shown below
+  //db1：No container exists in the database
+  //db2：Database does not exist
+  //db3：Container exists in the database
+
+  gs[public]> dropdatabase db1                  // No error occurs
+  gs[public]> dropdatabase db2                  // An error occurs
+  D20340: This database "db2" does not exists. 
+  gs[public]> dropdatabase db3                  // An error occurs
+  D20336: An unexpected error occurred while dropping the database.  : msg=[[145045:JC_DATABASE_NOT_EMPTY]
+  Illegal target error by non-empty database.]
+  ```
+
+[Memo]
+- Command can be executed by an administrator user only.
+- A public database which is a default connection destination cannot be deleted.
+
+  
+
+### Displaying current database
+
+Display the current database name.
+
+- Sub-command
+
+  | |
+  |-|
+  | getcurrentdatabase |
+
+- Example:
+
+  ``` example
+  gs[db1]> getcurrentdatabase
+  db1
+  ```
+
+  
+
+### Database list
+
+List the databases with access right information.
+
+- Sub-command
+
+  | |
+  |-|
+  | showdatabase [\<Database name\>] |
+
+- Argument
+
+  | Argument      | Note                                     |
+  |----------------|------------------------------------------|
+  | \<Database name\> | Specify the name of the database to be displayed. |
+
+- Example:
+
+  ``` example
+  gs[public]> showdatabase
+  Name             ACL
+  ---------------------------------
+  public           ALL_USER
+  DATABASE001      user01      ALL
+  DATABASE001      user02      READ
+  DATABASE002      user03      ALL
+  DATABASE003
+
+  gs[public]> showdatabase DATABASE001
+  Name             ACL
+  ---------------------------------
+  DATABASE001      user01      ALL
+  DATABASE001      user02      READ
+  ```
+
+[Memo]
+- For general users, only databases for which access rights have been assigned will be displayed. For administrator users, a list of all the databases will be displayed.
+
+  
+
+### Granting access rights
+
+Grant the database access rights to user.
+
+- Sub-command
+
+  | |
+  |-|
+  | grantacl \<Access rights\> \<Database name\> \<User name\> |
+
+- Argument
+
+  | Argument      | Note                                                   |
+  |----------------|--------------------------------------------------------|
+  | \<Access right\> | Specify the access right (ALL, READ). <br>"ALL" permission indicates all operations to a container are allowed such as creating a container, adding a row, searching, and creating an index. <br>"READ" permission indicates only search operations are allowed. |
+  | \<Database name\> | Specify the name of the database for which access rights are going to be granted |
+  | \<User name\> | Specify the name of the user to assign access rights to.         |
+
+- Example:
+
+  ``` example
+  gs[public]> grantacl ALL DATABASE001 user01
+  ```
+
+[Memo]
+- Command can be executed by an administrator user only.
+- If a user who has already been granted any access right to the database is specified, an error will occur.
+  - Execute this command after revoking the access rights ("revokeacl" command) if necessary.
+- More than one user can be granted an access right to one database.
+  
+
+### Revoking access rights
+
+Revoke access rights to the database.
+
+- Sub-command
+
+  | |
+  |-|
+  | revokeacl <Access right> <Database name> <User name> |
+
+- Argument
+
+  | Argument      | Note                                                   |
+  |----------------|--------------------------------------------------------|
+  | \<Access right\> | Specify the access right (ALL, READ). |
+  | \<Database name\> | Specify the name of the database for which access rights are going to be revoked. |
+  | \<User name\>     | Specify the name of the user whose access rights are going to be revoked.         |
+
+- Example:
+
+  ``` example
+  gs[public]> revokeacl ALL DATABASE001 user02
+  ```
+
+[Memo]
+- Command can be executed by an administrator user only.
+
+
+
+<a id="user_management"></a>
+## User management
+
+This section explains the available sub-commands that can be used to perform user management.  Connect to the cluster first prior to performing user management (sub-command connect).
+
+### Creating a general user
+
+Create a general user (username and password).
+
+- Sub-command
+
+  | |
+  |-|
+  | createuser \<User name\> \<Password\> |
+
+- Argument
+
+  | Argument      | Note                                     |
+  |------------|------------------------------------------|
+  | \<User name\> | Specify the name of the user to be created.       |
+  | \<Password\>  | Specify the password of the user to be created. |
+
+- Example:
+
+  ``` example
+  gs[public]> createuser user01 pass001
+  ```
+
+[Memo]
+- Command can be executed by an administrator user only.
+- A name starting with "gs\#" cannot be specified as the name of a general user as it is reserved for use by the administrator user.
+- When creating an administrator user, use the gs_adduser command in all the nodes constituting the cluster.
+
+  
+
+### Deleting a general user
+
+Delete the specified general user
+
+- Sub-command
+
+  | |
+  |-|
+  | dropuser \<User name\> |
+
+- Argument
+
+  | Argument         | Note                               |
+  |----------|------------------------------------|
+  | \<User name\> | Specify the name of the user to be deleted. |
+
+- Example:
+
+  ``` example
+  gs[public]> dropuser user01
+  ```
+
+[Memo]
+- Command can be executed by an administrator user only.
+
+  
+
+### Update password
+
+Update the user password.
+
+- Sub-command
+
+  | | |
+  |-|-|
+  | General user only       | setpassword \<password\> |
+  | Administrator user only | setpassword \<User name\> \<Password\> |
+
+- Argument
+
+  | Argument      | Note                                           |
+  |------------|------------------------------------------------|
+  | \<Password\>  | Specify the password to change.               |
+  | \<User name\> | Specify the name of the user whose password is going to be changed. |
+
+
+- Example:
+  ``` example
+  gs[public]> setpassword newPass009
+  ```
+
+[Memo]
+- The general user can change its own password only.
+- An administrator user can change the passwords of other general users only.
+
+  
+
+### Listing general users
+
+List information on a general user data and a role.
+
+- Sub-command
+
+  | |
+  |-|
+  | showuser \[user name \| role name\] |
+
+- Argument
+
+  | Argument         | Note                               |
+  |----------|------------------------------------|
+  | \<User name\> | Specify the name of the user or role to be displayed. |
+
+- Example:
+  ``` example
+  gs[public]> showuser
+  Name                            Type           
+  --------------------------------------------
+  user001                         General User  
+  ldapUser                        Role
+  ldapGroup                       Role
+
+  gs[public]> showuser user01
+  Name     : user001
+  Type     : General User
+  GrantedDB: public
+             DATABASE001      ALL
+             DATABASE003      READ
+  
+  gs[public]> showuser ldapUser
+  Name     : ldapUser
+  Type     : Role
+  GrantedDB: public
+             DATABASE002      ALL
+
+  ```
+
+[Memo]
+- Command can be executed by an administrator user only.
+
+  
 
 ## Container management
 
@@ -973,26 +1817,82 @@ Create a container.
   | Container (collection)           | createcollection \<Container name\> \<Column name\> \<Column type\> \[\<Column name\> \<Column type\> ...\] |
   | Container (timeseries container) | createtimeseries \<Container name\> \<Compression method\> \<Column name\> \<Column type\> \[\<Column name\> \<Column type\> ...\] |
 
+- Sub-command (Detailed version)
+
+  | | |
+  |-|-|
+  | Container (collection/timeseries container) | Createcontainer \<Container definition file\> \[\<Container name\>\] |
+
 - Description of each argument
 
   | Argument      | Note                                                 |
   |----------------------|-----------------------------------------------------|
-  | \<Container name\>  | Specify the name of the container to be created. |
+  | \<Container name\>  | Specify the name of the container to be created. If the name is omitted in the createcontainer command, a container with the name given in the container definition file will be created. |
   | Column name         | Specify the column name.                                 |
   | Column type         | Specify the column type.                           |
   | Compression method  | For time series data, specify the data compression method.       |
+  | Container data file | Specify the file that stores the container definition information in JSON format.    |
 
-　
+  
 
 **Simplified version**
 
-Specify the container name and column data (column name and type) to create the container. The compression type can also be specified for timeseries containers only.
+Specify the container name and column data (column name and type) to create the container.
 
-- Specify "NO", "SS" for the compression method. Use the API if "HI" is specified.
+- The timeseries compression function is removed from GridDB V5.0. Only "NO" can be specified for the compression method of timeseries data. "SS" and "HI" cannot be specified.
 - The collection will be created with a specified row key. The first column will become the row key.
-- To specify a composite row key, a composite index, column constraints, and index names, use the SQL.
+- To specify a composite row key, a composite index, column constraints, and index names, use the detailed version.
 
-　
+**Detailed version**
+
+Specify the container definition data in the json file to create a container.
+
+- The container definition data has the same definition as the metadata file output by the export tool. See the [container data file format](#format_of_container_data_file) and [Metadata files](#metadata_file) for the column type and data compression method, container definition format, etc. However, the following data will be invalid in this command even though it is defined in the metadata file of the export command.
+  - Version : Export tool version
+  - database : Database name
+  - ContainerFileType : Export data file type
+  - ContainerFile : Export file name
+  - PartitionNo : Partition no.
+- Describe a single container definition in a single container definition file.
+- If the container name is omitted in the argument, create the container with the name described in the container definition file.
+- If the container name is specified in the argument, ignore the container name in the container definition file and create the container with the name described in the argument.
+- An error will not occur even if the database name is described in the container definition file but the name will be ignored and the container will be created in the database currently being connected.
+- Partitioned tables are not applicable. An error will occur when table partitioning data is described in the container definition file.
+- When using the container definition file, the metadata file will be output when the --out option is specified in the [export function](#export_function). The output metadata file can be edited and used as a container definition file.
+
+- Example: When using the output metadata file as a container definition file
+
+  ``` example
+  {
+      "version":"2.1.00",                              ←unused
+      "container":"container_354",
+      "database":"db2",                                ←unused
+      "containerType":"TIME_SERIES",
+      "containerFileType":"binary",                    ←unused
+      "containerFile":"20141219_114232_098_div1.mc",   ←unused
+      "rowKeyAssigned":true,
+      "partitionNo":0,                                 ←unused
+      "columnSet":[
+          {
+              "columnName":"timestamp",
+              "type":"timestamp",
+              "notNull":true
+          },
+          {
+              "columnName":"active",
+              "type":"boolean",
+              "notNull":true
+          },
+          {
+              "columnName":"voltage",
+              "type":"double",
+              "notNull":true
+          }
+      ]
+  }
+  ```
+
+  
 
 ### Deleting container
 
@@ -1012,7 +1912,7 @@ Delete a container
 
 - Example:
   ``` example
-  gs[public]> dropcontainer　Con001
+  gs[public]> dropcontainer  Con001
   ```
 
 [Memo]
@@ -1148,7 +2048,7 @@ Display the container data.
    0  col1
   
   Name        :
-  Type        : HASH
+  Type        : TREE
   Columns:
   No  Name
   --------------------------
@@ -1203,7 +2103,7 @@ Display the container data.
         :
   ```
 
-　
+  
 
 ### Displaying a table data
 
@@ -1221,7 +2121,7 @@ Display the table data. It is compatible command of showcontainer.
   |------------|------------------------------------------------------------------------------------|
   | \<Table name\> | Specify the table name to be displayed. Display a list of all tables if omitted. |
 
-　
+  
 ### Searching for container
 
 Search for a container by specifying a container name.
@@ -1298,13 +2198,13 @@ Create an index in the column of a specified container.
   |---------------|-----------------------------------------------------------------------------------------------|
   | \<Container name\> | Specify the name of container that the column subject to the index operation belongs to.                                        |
   | Column name        | Specify the name of the column subject to the index operation.                                                          |
-  | Index type ...     | Specify the index type. Specify TREE, HASH or SPATIAL (or multiple) for the index type. |
+  | Index type ...     | Specify the index type. Specify TREE or SPATIAL for the index type. |
 
 - Example:
 
   ``` example
   //create index
-  gs[public]> createindex cont003 col2 tree hash
+  gs[public]> createindex cont003 col2 tree
 
   gs[public]> showcontainer cont003
   Database    : public
@@ -1334,20 +2234,13 @@ Create an index in the column of a specified container.
   No  Name                  
   --------------------------
    0  col2
-
-  Name        : 
-  Type        : HASH
-  Columns:
-  No  Name                  
-  --------------------------
-   0  col2
   ```
 
 [Memo]
 - An error will not occur even if an index that has already been created is specified.
-- An index name is not supported. In case of specifying an index name, use the SQL.
+- An index name is not supported. In case of specifying an index name, use the detailed version or SQL.
 
-　
+  
 
 ### Creating a compound index
 
@@ -1404,10 +2297,10 @@ Create a composite index on the column of a specified container.
   ```
 [Memo]
 - An error will not occur even if an index that has already been created is specified.
-- An index name is not supported. In case of specifying an index name, use the SQL.
+- An index name is not supported. In case of specifying an index name, use the detailed version or SQL.
 - Operations on the partition table are not supported. An error will occur if a partition table is specified for the container name.
 
-　
+  
 
 ### Deleting an index
 
@@ -1425,7 +2318,7 @@ Delete the index in the column of a specified container.
   |---------------|-----------------------------------------------------------------------------------------------|
   | \<Container name\> | Specify the name of container that the column subject to the index operation belongs to.                                        |
   | Column name        | Specify the name of the column subject to the index operation.                                                          |
-  | Index type ...     | Specify the index type. Specify TREE, HASH or SPATIAL (or multiple) for the index type. |
+  | Index type ...     | Specify the index type. Specify TREE or SPATIAL for the index type. |
 
 - Example:
 
@@ -1469,7 +2362,7 @@ Delete the index in the column of a specified container.
 [Memo]
 - An error will not occur even if an index that has not been created is specified.
 
-　
+  
 
 ### Deleting a compound index
 
@@ -1551,73 +2444,6 @@ Delete the compound index in the column of a specified container.
 - An error will not occur even if an index that has not been created is specified.
 - Operations on the partition table are not supported. An error will occur if a partition table is specified for the container name.
 
-　
-
-### Deleting a trigger
-
-Delete the trigger of a specified container.
-
-- Sub-command
-
-  | |
-  |-|
-  | droptrigger \<Container name\> \<Trigger name\> |
-
-- Argument
-
-  | Argument         | Note                                     |
-  |----------|------------------------------------------|
-  | \<Container name\> | Specify the name of the container whose trigger is going to be deleted. |
-  | Trigger name       | Specify the trigger name to delete.           |
-
-- Example:
-  ``` example
-  gs[public]> droptrigger con01 tri03
-  ```
-
-　
-
-### Displaying trigger data
-
-Display the trigger data of a specified container.
-
-- Sub-command
-
-  | |
-  |-|
-  | showtrigger \<Container name\> [\<Trigger name\>] |
-
-- Argument
-
-  | Argument         | Note                                                                               |
-  |----------|------------------------------------------------------------------------------------|
-  | \<Container name\> | Specify the container name to be displayed.                                                 |
-  | Trigger name       | Specify the trigger name to be displayed. Display a list of all trigger data if omitted. |
-
-- Example:
-
-  ``` example
-  //Display the trigger data list of the specified container
-  gs[public]> showtrigger cont003
-  Name                 Type  Columns              Events
-  ---------------------------------------------------------------
-  rtrig01              REST  [col1, col3]         [PUT]
-
-  gs[public]> showtrigger cont003 rtrig01
-  Name          : rtrig01
-  Type          : REST
-  Target Columns: [col1, col3]
-  Target Events : [PUT]
-
-  Destination URI: http://example.com
-  ```
-
-[Memo]
-- The data displayed in a trigger list are the "Trigger name", "Notification method", "Column to be notified", "Operation to be monitored (create new or update, delete a row)".
-- The data displayed in the specified trigger data are the "Trigger name", "Notification method", "Column to be notified", "Operation to be monitored" and "Notification destination URI". In addition, the "Destination name", "Destination type", "User" and "Password" are also displayed together in a JMS notification.
-- See the chapter of "Trigger function" of a ["GridDB functional reference"](https://github.com/griddb/docs-en/blob/master/manuals/GridDB_FeaturesReference.md) for the details of a trigger function.
-
-　
 
 ## Execution plan
 
@@ -1644,19 +2470,19 @@ Display an SQL analysis result (global plan) in text format or in JSON format.
 - Example:
 
   ``` example
+  gs[public]> EXPLAIN ANALYZE select * from table1, table2 where table1.value=0 and table1.id=table2.id;
+  Search is executed (11 ms).
+  
   gs[public]> getplantxt
-  Id Type         Input Rows Lead time Actual time Node                 And more..
-  -----------------------------------------------------------------------------------------------------------------
-   0 SCAN         -     -            0           0 192.168.56.101:10001 table: {collection_nopart_AA22} INDEX SCAN
-   1 SCAN         -     -            0           0 192.168.56.101:10001 table: {collection_nopart_AA23}
-   2   JOIN       0,1   1,10         1           1 192.168.56.101:20001 JOIN_EQ_HASH
-   3   SCAN       -     -            0           0 192.168.56.101:10001 table: {collection_nopart_AA24}
-   4     JOIN     2,3   1,10         4           1 192.168.56.101:20001 JOIN_EQ_HASH
-   5       RESULT 4     1            0           0 192.168.56.101:20001           
+  Id Type       Input Rows Lead time Actual time Node                 And more..
+  --------------------------------------------------------------------------------------------------------------------
+  0 SCAN       -     -            0           0 192.168.15.161:10001 table: {table1} INDEX SCAN
+  1   SCAN     0     0            2           2 192.168.15.161:10001 table: {table1, table2} INDEX SCAN JOIN_EQ_HASH
+  2     RESULT 1     0            0           0 192.168.15.161:20001
   ```
 
 [Memo]
-- An error will occur if EXPLAIN or EXPLAIN ANALYZE is not executed in advance.
+- This subcommand is for an SQL statement executed using EXPLAIN or EXPLAIN ANALYZE immediately before running the subcommand.
 - The contents to be displayed
   - ID: Plan ID
   - Type: Type of processing
@@ -1708,7 +2534,7 @@ Display an SQL analysis result (global plan) in text format or in JSON format.
   ```
 
 [Memo]
-- An error will occur if EXPLAIN or EXPLAIN ANALYZE is not executed in advance.
+- This subcommand is for an SQL statement executed using EXPLAIN or EXPLAIN ANALYZE immediately before running the subcommand.
 
 ### Getting detailed information about an SQL analysis result
 
@@ -1753,7 +2579,7 @@ Display the detailed information of an SQL analysis result in JSON format.
   ```
 
 [Memo]
-- An error will occur if EXPLAIN or EXPLAIN ANALYZE is not executed in advance.
+- This subcommand is for an SQL statement executed using EXPLAIN or EXPLAIN ANALYZE immediately before running the subcommand.
 
 ## Other operations
 
@@ -1785,7 +2611,7 @@ Display the executed sub-command in the standard output.
 [Memo]
 - gs_sh prompt "gs\>" always appear in the standard output.
 
-　
+  
 
 ### Displaying a message
 
@@ -1807,14 +2633,14 @@ Display the definition details of the specified character string or variable.
 
   ``` example
   //display of character string
-  gs> print print executed.  
+  gs> print print executed. 
   print executed.
   ```
 
 [Memo]
 - Append "$" in front of the variable name when using a variable.
 
-　
+  
 
 ### Sleep
 
@@ -1842,7 +2668,7 @@ Set the time for the sleeping function.
 [Memo]
 - Specify a positive integer for the no. of sec number.
 
-　
+  
 
 ### Executing external commands
 
@@ -1871,7 +2697,7 @@ Execute an external command.
 [Memo]
 - Pipe, redirect, and hear document cannot be used.
 
-　
+  
 
 ### Terminating gs_sh
 
@@ -1886,7 +2712,7 @@ The above command is used to terminate gs_sh.
 - Example:
 
   ``` example
-  // terminate gs_sh.  
+  // terminate gs_sh. 
   gs> exit
   ```
 
@@ -1914,7 +2740,7 @@ In addition, if an error occurs in the sub-command, the setting can be configure
 [Memo]
 - There is no functional difference between the exit sub-command and quit sub-command.
 
-　
+  
 
 ### Help
 
@@ -1944,7 +2770,7 @@ Display a description of the sub-command.
 [Memo]
 - A description of gs_sh can be obtained with the command "gs_sh --help".
 
-　
+  
 
 ### Version
 
@@ -1988,6 +2814,37 @@ Set the time zone.
 [Memo]
 - If the time zone setting is changed with the settimezone subcommand after executing the connect subcommand, the changed timezone setting is not reflected until the connect subcommand is executed again. After changing the time zone setting, execute the connect subcommand again.
 
+
+
+### Setting the address of the interface to receive the multicast packets from
+
+To configure the cluster network in multicast mode when multiple network interfaces are available, specify the IP address of the interface to receive the multicast packets from.
+
+- Sub-command
+
+  | |
+  |-|
+  | setntfif \[IP address\] |
+
+- Argument
+
+  | Argument      | Note                                                                                     |
+  |----------------|------------------------------------------------------------------------------------------|
+  | IP address | Specify in IPv4 the IP address of the interface from which the multicast packet is received. If unspecified, the set value is cleared. The set value can be checked by using the variable notificationInterfaceAddress. |
+
+- Example:
+
+  ``` example
+  gs[public]> setntfif 192.168.1.100
+
+  // Check the settings.
+  gs[public]> print $notificationInterfaceAddress
+  192.168.1.100
+  ```
+
+[Memo]
+- Rerun the connect subcommand after modifying the settings.
+
 ### Displaying history and rerunning a previous subcommand
 
 Display previously run subcommands.
@@ -2025,12 +2882,12 @@ Rerun the previously run subcommand.
 
   ``` example
   gs> history
-  　1  connect $mycluster
-  　2  showcontainer
-  　3  select * from mytable;
-  　:
-  　210  configcluster $mycluster
-  　211  history
+    1  connect $mycluster
+    2  showcontainer
+    3  select * from mytable;
+    :
+    210  configcluster $mycluster
+    211  history
 
   gs> !210
   gs> configcluster $mycluster
@@ -2070,7 +2927,7 @@ Rerun the previously run subcommand.
 - In order to batch process the gs_sh sub-command, a script file can be created. Extension of script file is gsh.
 - During gs_sh startup, .gsshrc script files under the gsadm user home directory are imported automatically. The .gsshrc contents will also be imported to the destination from other script files.
 
-　
+  
 
 ### Sub-command list
 
@@ -2086,8 +2943,8 @@ Rerun the previously run subcommand.
   | set           | \<Variable name\> \[\<Value\>\]                                                                               | Define an arbitrary variable.                                            |     |
   | show          | \[\<Variable name\>\]                                                                                         | Display the detailed definition of the variable.                                         |     |
   | save          | \[\<Script file name\>\]                                                                                      | Save the variable definition in the script file.                             |     |
-  | load          | \[\<Script file name\>\]                                                                                      | Execute a read script file.                               | 　 |
-  | sync     | IP address port number　\[cluster variable name \[node variable\] \]       | Connect to the running GridDB cluster and automatically define a cluster variable and a node variable.                                | \*　 |
+  | load          | \[\<Script file name\>\]                                                                                      | Execute a read script file.                               |    |
+  | sync     | IP address port number  \[cluster variable name \[node variable\] \]       | Connect to the running GridDB cluster and automatically define a cluster variable and a node variable.                                | \*   |
 
   - \*1 : Commands marked with an \* can be executed by the administrator user only.
 
@@ -2096,6 +2953,19 @@ Rerun the previously run subcommand.
 
   | Sub-command       | Argument                                                              | Note                                                                         | \*1 |
   |-----------------------|----------------------------------------------------|----------------------------------------------|-----|
+  | startnode         | \<Node variable\> \| \<Cluster variable\> \[\<Timeout time in sec\>\]  | Start the specified node.                                | \*  |
+  | stopnode          | \<Node variable\> \| \<Cluster variable\> \[\<Timeout time in sec\>\]  | Stop the specified node.                                | \*  |
+  | stopnodeforce     | \<Node variable\> \| \<Cluster variable\> \[\<Timeout time in sec\>\]  | Stop the specified node by force.                            | \*  |
+  | startcluster      | \<Cluster variable\> \[ \<Timeout time in sec.\> \]                   | Attach the active node groups to a cluster, together at once.                | \*  |
+  | stopcluster       | \<Cluster variable\> \[ \<Timeout time in sec.\> \]                   | Detach all of the currently attached nodes from a cluster, together at once.            | \*  |
+  | joincluster       | \<Cluster variable\> \<Node variable\> \[ \<Timeout time in sec.\> \] | Attach a node individually to a cluster.                    | \*  |
+  | leavecluster      | \<Node variable\> \[ \<Timeout time in sec.\> \]                      | Detach a node individually from a cluster.                  | \*  |
+  | leaveclusterforce | \<Node variable\> \[ \<Timeout time in sec.\> \]                      | Detach a node individually from a cluster by force.          | \*  |
+  | configcluster     | Cluster variable                                                      | Display the cluster status data.               | \*  |
+  | config            | Node variable                                                         | Display the cluster configuration data.                     | \*  |
+  | stat              | Node variable                                                         | Display the node configuration data and statistical information.                | \*  |
+  | logs              | Node variable                                                         | Displays the log of the specified node.                      | \*  |
+  | logconf           | \<Node variable\> \[ \<Category name\> \[ \<Output level\> \] \]      | Display and change the log settings.                          | \*  |
   | showsql           | Query ID                                                              | Display the SQL processing under execution.                         |   |
   | showevent         |                                                                       | Display the event list under execution.                    |   |
   | showconnection    |                                                                       | Display the list of connections.                      |   |
@@ -2103,7 +2973,7 @@ Rerun the previously run subcommand.
 
   - \*1 : Commands marked with an \* can be executed by the administrator user only.
 
-　
+  
 
 - Data operation sub-command list
 
@@ -2120,34 +2990,63 @@ Rerun the previously run subcommand.
   | sql         | \<SQL command;\>                           | Execute an SQL command and retains the search result.                       |     |
   | sqlcount    | Boolean                                    | Set whether to execute count query when SQL querying. |     |
   | queryclose  |                                            | Close the query and discard the search results saved.            |     |
-  | disconnect  |                                            | Disconnect user from a GridDB cluster.                             |   　  |
+  | disconnect  |                                            | Disconnect user from a GridDB cluster.                             |       |
 
   - \*1 : Commands marked with an \* can be executed by the administrator user only.
 
- 　
+  
+
+- Database management sub-command list
+
+  | Sub-command       | Argument                                                              | Note                                                                         | \*1 |
+  |--------------------|-------------------------|-------------------------------------------|-----|
+  | createdatabase     | \<Database name\>                                 | Create a database.                        | \*  |
+  | dropdatabase       | \<Database name\>                                 | Delete a database.                        | \*  |
+  | getcurrentdatabase |                                                   | Display the current database name.             |     |
+  | showdatabase       | \<Database name\>                                 | List the databases with access right information. |     |
+  | grantacl           | \<access rights\> \<Database name\> \<User name\> | Grant the database access rights to user.            | \*  |
+  | revokeacl          | \<access rights\> \<Database name\> \<User name\> | Revoke access rights to the database.            | \*  |
+
+  - \*1 : Commands marked with an \* can be executed by the administrator user only.
+
+  
+
+- User management sub-command list
+
+  | Sub-command       | Argument                                                              | Note                                                                         | \*1 |
+  |-----------------|----------------------|--------------------------------|-----|
+  | createuser  | \<User name\> \<Password\> | Create a general user.            | \*  |
+  | dropuser    | \<User name\>              | Delete a general user.           | \*  |
+  | setpassword | \<Password\>               | Change the own password.     |     |
+  | setpassword | \<User name\> \<Password\> | Change the password of a general user.  | \*  |
+  | showuser | \[user name | role name\]  |  Display information on a general user and a role.    | \*   |
+
+  - \*1 : Commands marked with an \* can be executed by the administrator user only.
+
+  
+   
 - Container management sub-command list
 
   | Sub-command       | Argument                                                              | Note                                                                         | \*1 |
   |------------------|--------------------------------------------------------|------------------------------------------------|-----|
   | createcollection | \<Container name\> \<Column name\> \<Column type\> \[\<Column name\> \<Column type\> ...\]                        | Create a container (collection).           |     |
   | createtimeseries | \<Container name\> \<Compression method\> \<Column name\> \<Column type\> \[\<Column name\> \<Column type\> ...\] | Create a container (timeseries container).         |     |
+  | createcontainer  | \<Container definition file\> \[\<Container name\>\]                                                              | Create a container based on the container definition file. |     |
   | dropcontainer    | \<Container name\>                                                                                                | Delete a container                         |     |
-  | putrow     | container name value [value...]       | Register a row in a container.    | 　 |
-  | removerow     | container name row key value [row key value...]  | Delete a row from a container.        | 　 |
+  | putrow     | container name value [value...]       | Register a row in a container.    |    |
+  | removerow     | container name row key value [row key value...]  | Delete a row from a container.        |    |
   | showcontainer    | \[ \<Container name\> \]                                                                                          | Display the container data.                     |     |
   | showtable        | \[ \<Table name\> \]                                                                                              | Display the table data.                     |     |
-  | searchcontainer   | \[container name\]  | Search for a container by specifying a container name.    | 　 |
-  | searchview    | \[view name\]  | Search for a view by specifying a view name.  | 　 |
+  | searchcontainer   | \[container name\]  | Search for a container by specifying a container name.    |    |
+  | searchview    | \[view name\]  | Search for a view by specifying a view name.  |    |
   | createindex      | \<Container name\> \<Column name\> \<Index type\> ...                                                             | Create an index in the specified column.                 |     |
   | createcompindex  | \<Container name\> \<Column name\> ...                                                                            | Create a composite index on the specified column.             |     |
   | dropindex        | \<Container name\> \<Column name\> \<Index type\> ...                                                             | Delete an index of the specified column.                 |     |
   | dropcompindex    | \<Container name\> \<Column name\> ...                                                                            | Deletes the composite index of the specified column.               |     |
-  | droptrigger      | \<Container name\> \<Trigger name\>                                                                               | Delete the trigger data.                       |     |
-  | showtrigger      | \<Container name\> [\<Trigger name\>]                                                                           | Display the trigger data.                       |     |
 
   - \*1 : Commands marked with an \* can be executed by the administrator user only.
 
-　
+  
 
 - Execution plan sub-command list
 
@@ -2159,7 +3058,7 @@ Rerun the previously run subcommand.
 
   - \*1 : Commands marked with an \* can be executed by the administrator user only.
 
-　
+  
 
 - Other operation sub-command list
 
@@ -2175,10 +3074,11 @@ Rerun the previously run subcommand.
   | help        | \[ \<Sub-command name\> \]                      | Display a description of the sub-command.                    |     |
   | version     |                                                 | Display the version of gs_sh.                       |     |
   | settimezone | \[setting value\]                               | Set the time zone.                      |     |
+  | setntfif | \[ IP address \]       | Specify the IP address of the interface from which the multicast packet is received. |     |
   | history | | Display previously run subcommands. |   |
   | !\[history number \]| | Specify the history number of the subcommand you want to rerun from the subcommand history displayed with the history subcommand. |   |
   | !! | |Rerun the previously run subcommand. |   |
 
   - \*1 : Commands marked with an \* can be executed by the administrator user only.
 
- 　
+   
