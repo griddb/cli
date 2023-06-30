@@ -32,16 +32,6 @@ public class RepositoryUtils {
 
 		if ( (repositoryType == null) || !repositoryType.equalsIgnoreCase("RDB") ){
 			m_repository = new FileClusterRepository(ToolProperties.getHomeDir());
-		} else {
-			m_repository = new RDBClusterRepository(
-					ToolProperties.getMessage("rdb.driver"),
-					ToolProperties.getMessage("rdb.host"),
-					ToolProperties.getMessage("rdb.port"),
-					ToolProperties.getMessage("rdb.database"),
-					ToolProperties.getMessage("rdb.user"),
-					ToolProperties.getMessage("rdb.password"),
-					ToolProperties.getMessage("rdb.jndi")
-					);
 		}
 	}
 
