@@ -57,10 +57,24 @@ public class BasicCommandClass extends AbstractCommandClass {
     REMOVE
   }
 
+  /** The operator in sub-command {@code setsslmode}. */
+  public enum SslMode {
+    DISABLED("DISABLED"),
+    REQUIRED("PREFERRED"),
+    VERIFY("VERIFY");
+    private String value;
+
+    SslMode(String value) {
+      this.value = value;
+    }
+
+    public String getValue() {
+      return value;
+    }
+  }
+
   private static final int DEFAULT_SSH_PORT = 22;
 
-  /** The operator in sub-command {@code setsslmode}. */
-  public static final String[] SSL_MODE = {"DISABLED", "PREFERRED", "VERIFY"};
   /**
    * Get command group name.
    *
@@ -864,39 +878,56 @@ public class BasicCommandClass extends AbstractCommandClass {
   }
 
   /**
-   * The main method for sub-command {@code systemssl}.<br>
-   * Set the flag whether to use SSL connection when executing cluster operation controls
-   *
-   * @param systemSSL @code true} to use SSL connection when executing cluster operation controls,
-   *     {@code false} to not.
-   * @see ScriptContext
-   */
-  @GSCommand(hidden = true, name = "systemssl")
-  public void setSystemSSL(boolean systemSSL) {
-    getContext().setAttribute(GridStoreShell.SYSTEM_SSL, systemSSL, ScriptContext.ENGINE_SCOPE);
-  }
-
-  /**
    * The main method for sub-command {@code setsslmode}.<br>
    * Set SSL Mode
    *
-   * @param sslMode ssl mode (DISABLED, PREFERRED and VERIFY)
+   * @param sslMode ssl mode (DISABLED, REQUIRED and VERIFY)
    * @see ScriptContext
    */
-  @GSCommand(hidden = true, name = "setsslmode")
+  @GSCommand(name = "setsslmode")
   public void setSSLMode(@GSNullable String sslMode) {
+
     if (sslMode != null) {
-      boolean isValidSSLMode = Arrays.stream(SSL_MODE).anyMatch(sslMode::equalsIgnoreCase);
-      if (isValidSSLMode) {
-        getContext()
-            .setAttribute(
-                GridStoreShell.SSL_MODE, sslMode.toUpperCase(), ScriptContext.ENGINE_SCOPE);
-      } else {
-        String valueSSLAvailable = "[" + SSL_MODE[0] + ", " + SSL_MODE[1] + "]";
+      try {
+        SslMode.valueOf(sslMode);
+      } catch (IllegalArgumentException e) {
+        String valueSSLAvailable =
+            "["
+                + SslMode.DISABLED.getValue()
+                + ", "
+                + SslMode.REQUIRED.toString()
+                + ", "
+                + SslMode.VERIFY.getValue()
+                + "]";
         throw new ShellException(getMessage("error.illegalEnum", sslMode, valueSSLAvailable));
       }
+      if (sslMode.equals(SslMode.REQUIRED.toString())) {
+        getContext()
+            .setAttribute(
+                GridStoreShell.SSL_MODE, SslMode.REQUIRED.getValue(), ScriptContext.ENGINE_SCOPE);
+      } else {
+        getContext().setAttribute(GridStoreShell.SSL_MODE, sslMode, ScriptContext.ENGINE_SCOPE);
+      }
+
     } else {
-      getContext().setAttribute(GridStoreShell.SSL_MODE, SSL_MODE[1], ScriptContext.ENGINE_SCOPE);
+      getContext()
+          .setAttribute(
+              GridStoreShell.SSL_MODE, SslMode.DISABLED.getValue(), ScriptContext.ENGINE_SCOPE);
     }
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

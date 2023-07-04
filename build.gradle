@@ -15,8 +15,8 @@ sourceSets {
     }
 }
 
-def gridstoreVersion = '5.0.0'
-def gridstoreJdbcVersion = '5.0.0'
+def gridstoreVersion = '5.3.0'
+def gridstoreJdbcVersion = '5.3.0'
 
 repositories {
     mavenCentral()
@@ -40,6 +40,7 @@ dependencies {
     implementation 'com.github.griddb:gridstore:' + "${gridstoreVersion}"
     implementation 'com.github.griddb:gridstore-jdbc:' + "${gridstoreJdbcVersion}"
     implementation project(":griddb-tools-common")
+
 }
 
 jar {

@@ -400,7 +400,7 @@ public class GridStoreWebAPI {
 		/**
 		 * Maximum Log Sequence Number.
 		 */
-		public int maxLsn;
+		public long maxLsn;
 	}
 	
 	/**
@@ -415,7 +415,7 @@ public class GridStoreWebAPI {
 		/**
 		 * Log Sequence Number.
 		 */
-		public int lsn;
+		public long lsn;
 		/**
 		 * Node port.
 		 */

@@ -185,6 +185,7 @@ public class GridStoreScriptEngine extends AbstractScriptEngine {
             LineReaderBuilder.builder()
                 .terminal(terminal)
                 .option(Option.BRACKETED_PASTE, false)
+                .option(Option.HISTORY_IGNORE_SPACE, false)
                 .parser(new DefaultParser())
                 .history(new DefaultHistory())
                 .completer(new ArgumentCompleter(completors))

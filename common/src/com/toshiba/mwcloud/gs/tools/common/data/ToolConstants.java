@@ -17,11 +17,11 @@ package com.toshiba.mwcloud.gs.tools.common.data;
 public class ToolConstants {
 
 	/** メタ情報ファイルフォーマットのバージョン */
-	public static String META_FILE_VERSION = "4.3.1";
+	public static String META_FILE_VERSION = "5.3.0";
 
 
 	/** ロウファイルのタイプ(CSV/バイナリ) */
-	public static enum RowFileType { CSV, BINARY, AVRO, ARCHIVE_CSV, RDB }
+	public static enum RowFileType { CSV, BINARY, AVRO, ARCHIVE_CSV }
 
 	/** JSONファイルの文字コード */
 	public static final String ENCODING_JSON			= "UTF-8";
@@ -35,6 +35,10 @@ public class ToolConstants {
 	/** DBとコンテナ名の区切り文字 */
 	public static final String DB_DELIMITER				= ".";
 
+	/** DATE TIME FORMAT */
+	public static final String DATE_FORMAT_MILLISECOND = "yyyy-MM-dd'T'HH:mm:ss.SSSXXX";
+	public static final String DATE_FORMAT_MICROSECOND = "yyyy-MM-dd'T'HH:mm:ss.SSSSSSXXX";
+	public static final String DATE_FORMAT_NANOSECOND = "yyyy-MM-dd'T'HH:mm:ss.SSSSSSSSSXXX";
 
 	//******************************************************************
 	// メタ情報ファイル (*_properties.json)の項目名
@@ -91,6 +95,7 @@ public class ToolConstants {
 	public static final String JSON_META_COLUMN_SET				= "columnSet";
 	public static final String JSON_META_COLUMN_NAME			= "columnName";
 	public static final String JSON_META_COLUMN_TYPE			= "type";
+	public static final String JSON_META_COLUMN_TIME_PRECISION	= "precision";
 	//public static final String JSON_META_COLUMN_CSTR			= "constraints";
 	public static final String JSON_META_COLUMN_CSTR_NOTNULL	= "notNull";
 
@@ -157,6 +162,10 @@ public class ToolConstants {
 	public static final String JSON_META_TP_ITV_VALUE			= "intervalValue";
 	public static final String JSON_META_TP_ITV_UNIT			= "intervalUnit";
 
+	// TimeIntervalInfo
+	public static final String JSON_META_TIME_INTERVAL_INFO	= "timeIntervalInfo";
+	public static final String JSON_META_BOUNDARY_VALUE = "boundaryValue";	
+	
 	//******************************************************************
 	//  メタ情報ファイルの値
 	//******************************************************************
@@ -180,6 +189,9 @@ public class ToolConstants {
 	public static final String COLUMN_TYPE_DOUBLE_ARRAY		= "double[]";
 	public static final String COLUMN_TYPE_TIMESTAMP_ARRAY	= "timestamp[]";
 	public static final String COLUMN_TYPE_BOOL				= "boolean";
+	public static final String COLUMN_TYPE_TIMESTAMP_MILI	= "timestamp(3)";
+	public static final String COLUMN_TYPE_TIMESTAMP_MICRO	= "timestamp(6)";
+	public static final String COLUMN_TYPE_TIMESTAMP_NANO	= "timestamp(9)";
 
 	// (互換性用)コンテナ属性
 	public static final String EXP_TOOL_ATTRIBUTE_BASE = "BASE";
@@ -231,10 +243,17 @@ public class ToolConstants {
 	 */
 	private static final String STMT_SELECT_ANY_FROM = "SELECT * FROM ";
 
-
+	private static final String STMT_SELECT_TABLE_NAME_FROM = "SELECT TABLE_NAME FROM ";
+	
 	/** テーブルメタテーブル取得  */		// SELECT * FROM "#tables"
 	public static final String STMT_SELECT_META_TABLES = STMT_SELECT_ANY_FROM + "\"" + META_TABLES + "\"";
 
+	/** テーブルメタテーブル名取得  */ // SELECT TABLE_NAME FROM "#tables"
+	public static final String STMT_SELECT_META_TABLE_NAMES = STMT_SELECT_TABLE_NAME_FROM + "\"" + META_TABLES + "\"";
+
+	/** TimeSeriesのテーブル名取得  */ // SELECT TABLE_NAME FROM "#tables" WHERE TABLE_OPTIONAL_TYPE = 'TIMESERIES'
+	public static final String STMT_SELECT_META_TIMESERIES_NAMES = STMT_SELECT_META_TABLE_NAMES + " WHERE TABLE_OPTIONAL_TYPE = 'TIMESERIES'";
+	
 	/** パーティションメタテーブル取得 */		// SELECT * FROM "#table_partitions"
 	public static final String STMT_SELECT_META_TABLE_PARTITIONS = STMT_SELECT_ANY_FROM + "\"" + META_TABLE_PARTITIONS + "\"";
 
@@ -252,6 +271,15 @@ public class ToolConstants {
 
 	/** パーティションテーブル名一覧取得 */	// SELECT * FROM "#tables" WHERE PARTITION_TYPE IS NOT NULL
 	public static final String STMT_SELECT_META_TABLES_PATITIONNAMES = STMT_SELECT_META_TABLES + " WHERE PARTITION_TYPE IS NOT NULL";
+
+	/** パーティショニングテーブルかつパーティションキーがTimeStamp型のインターバルパーティションテーブル名一覧取得 */ // SELECT TABLE_NAME FROM "#tables" WHERE PARTITION_TYPE = 'INTERVAL' and PARTITION_INTERVAL_UNIT IS NOT NULL
+	public static final String STMT_SELECT_META_TABLES_INTERVAL_PARTITIONNAMES = STMT_SELECT_META_TABLE_NAMES + " WHERE PARTITION_TYPE = 'INTERVAL' and PARTITION_INTERVAL_UNIT IS NOT NULL";
+	
+	/** パーティショニングテーブルかつパーティションキーがTimeStamp型以外のインターバルパーティションテーブル名一覧取得 */ // SELECT TABLE_NAME FROM "#tables" WHERE PARTITION_TYPE = 'INTERVAL' and PARTITION_INTERVAL_UNIT IS NULL
+	public static final String STMT_SELECT_META_TABLES_INTERVAL_NOT_TIMESTAMP_PARTITIONNAMES = STMT_SELECT_META_TABLE_NAMES + " WHERE PARTITION_TYPE = 'INTERVAL' and PARTITION_INTERVAL_UNIT IS NULL";
+
+	/** パーティショニングテーブルかつパーティションキーがTimeStamp型以外のハッシュパーティションテーブル名一覧取得 */ // SELECT TABLE_NAME FROM "#tables" WHERE PARTITION_TYPE = 'HASH' and PARTITION_INTERVAL_UNIT IS NULL
+	public static final String STMT_SELECT_META_TABLES_HASH_NOT_TIMESTAMP_PARTITIONNAMES = STMT_SELECT_META_TABLE_NAMES + " WHERE PARTITION_TYPE = 'HASH' and PARTITION_INTERVAL_UNIT IS NULL";
 
 	/** ビューメタテーブル取得 */	// SELECT * FROM "#views"
 	public static final String STMT_SELECT_META_VIEWS = STMT_SELECT_ANY_FROM + "\"" + META_VIEWS + "\"";
