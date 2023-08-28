@@ -227,7 +227,6 @@ public class GridStoreScriptEngine extends AbstractScriptEngine {
           if (lineReader != null) {
             line = lineReader.readLine(prompt);
           } else {
-            System.out.print(prompt);
             line = bufferedReader.readLine();
           }
           if (line == null) {
@@ -238,6 +237,12 @@ public class GridStoreScriptEngine extends AbstractScriptEngine {
           if (line.equals("") || line.startsWith("#")) {
             continue;
           }
+
+          boolean isInteractive = (lineReader != null);
+          if (isInteractive == false && isEcho(context)) {
+            System.out.print(prompt);
+          }
+
           String[] tokens = line.split("\\s+", 2);
           String name = tokens[0].toLowerCase();
           String params = tokens.length == 1 ? "" : tokens[1];
