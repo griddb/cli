@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+
+<configuration>
+
+	<property name="logPath" value="/var/lib/gridstore/log" />
+
+	<appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+		<rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+			<fileNamePattern>${logPath}/gs_sh-%d{yyyyMMdd}.log</fileNamePattern>
+			<maxHistory>10</maxHistory>
+		</rollingPolicy>
+
+		<encoder>
+			<pattern>%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %level [%thread] %logger [%file::%line] %msg%n</pattern>
+		</encoder>
+	</appender>
+
+	<root level="warn">
+		<appender-ref ref="FILE" />
+	</root>
+</configuration>
