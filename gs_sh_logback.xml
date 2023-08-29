@@ -2,7 +2,7 @@
 
 <configuration>
 
-	<property name="logPath" value="/var/lib/gridstore/log" />
+	<property name="logPath" value="log" />
 
 	<appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
 		<rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
