@@ -104,6 +104,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.stream.Stream;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import javax.script.ScriptContext;
@@ -155,6 +156,15 @@ public class DataCommandClass extends AbstractCommandClass {
   private Connection m_jdbcCon;
   private Statement m_jdbcStmt;
   private ResultSet m_jdbcRS;
+  private String m_jdbcSQL = "";
+
+  /* Improve CLI result format */
+  private static final Integer MAX_COLUMN_WIDTH_DEFAULT = 31;
+  private static final Integer MIN_COLUMN_WIDTH_LIMIT = 1;
+  private static final Integer MAX_COLUMN_WIDTH_LIMIT = 1_000_000;
+  private Integer  m_resultMaxWidth = MAX_COLUMN_WIDTH_DEFAULT;
+  private enum ResultFormat { TABLE, CSV }
+  private ResultFormat m_resultFormat = ResultFormat.TABLE;
 
   private String m_dbName;
   private String m_connectedUser;
@@ -2122,7 +2132,7 @@ public class DataCommandClass extends AbstractCommandClass {
     println("------------------------------------------------------------------------------");
     int colCount = contInfo.getColumnCount();
     List<IndexInfo> gsIndices = contInfo.getIndexInfoList();
-     List<Integer> rowKeyColumnList = contInfo.getRowKeyColumnList();
+    List<Integer> rowKeyColumnList = contInfo.getRowKeyColumnList();
 
     for (int colNo = 0; colNo < colCount; ++colNo) {
       ColumnInfo colInfo = contInfo.getColumnInfo(colNo);
@@ -2414,6 +2424,7 @@ public class DataCommandClass extends AbstractCommandClass {
         println(getMessage("message.selectOnly", end - start));
       }
 
+
     } catch (GSException e) {
       queryObjClose();
       throw new ShellException(getMessage("error.tql") + " : msg=[" + e.getMessage() + "]", e);
@@ -2491,6 +2502,7 @@ public class DataCommandClass extends AbstractCommandClass {
       }
 
       m_jdbcStmt = m_jdbcCon.createStatement();
+      m_jdbcSQL  = sql;
 
       String sqlCheckStr = sql.replaceAll("/\\*[^\\*]*\\*/", " ");
       sqlCheckStr = (sqlCheckStr.replaceAll("--.*(\r\n|\n)", " ")).trim();
@@ -2549,6 +2561,7 @@ public class DataCommandClass extends AbstractCommandClass {
         m_jdbcStmt = null;
       }
 
+
     } catch (Exception e) {
       queryObjClose();
       throw new ShellException(getMessage("error.sql") + " : msg=[" + e.getMessage() + "]", e);
@@ -2590,6 +2603,178 @@ public class DataCommandClass extends AbstractCommandClass {
     return count;
   }
 
+  /* improve query result: display pretty format as table instead of CSV */
+  private class ResultTable {
+    private final String                  CELL_PADDING;
+    private final Integer                 MAX_CELL_WIDTH;
+    private final Integer                 columnCount;
+    private final ArrayList<String>       columnHeader;
+    private final Integer[]               cellWidthList;
+    private ArrayList<ArrayList<String>>  resultRows;
+
+    /**
+     * Create a result table
+     *
+     * @param columnNames name of columns
+     * @param maxColumnWidth maximum width for all columns
+     */
+    public ResultTable(ArrayList<String> columnNames, Integer maxColumnWidth) {
+      this.columnHeader   = columnNames;
+      this.columnCount    = columnNames.size();
+      this.cellWidthList  = columnNames.stream()
+                                .map(column -> Math.min(column.length(), maxColumnWidth))
+                                .toArray(Integer[]::new);
+      this.resultRows     = new ArrayList<ArrayList<String>>();
+      this.MAX_CELL_WIDTH = maxColumnWidth;
+      this.CELL_PADDING   = new String(new char[maxColumnWidth])
+                                      .replace("\0", " ");
+    }
+
+    /**
+     * Create a result table
+     *
+     * @param columnNames name of columns
+     */
+    public ResultTable(ArrayList<String> columnNames) {
+      this(columnNames, MAX_COLUMN_WIDTH_DEFAULT);
+    }
+
+    /**
+     * Get the width of a given column
+     *
+     * @param cloumnIndex the position of column in table
+     * @return a interger value
+     */
+    public Integer getColumnWidth(int cloumnIndex) {
+      return cellWidthList[cloumnIndex];
+    }
+
+    /**
+     * Set width to a column
+     *
+     * @param cloumnIndex index of column to set width
+     * @param width the value to set
+     */
+    public void setColumnWidth(int cloumnIndex, Integer width) {
+      cellWidthList[cloumnIndex] = width;
+    }
+
+    /**
+     * Add a new row into the ResultTable
+     *
+     * @param row the row that represent by list of cell values
+     */
+    public void addRow(ArrayList<String> row) {
+      if (row.size() != columnCount) {
+        throw new ShellException(getMessage("error.getrow") + " : msg=[" + getMessage("message.getrow.mismatch", row.size(), columnCount) + "]");
+      }
+      resultRows.add(row);
+      /* update column width */
+      for (int colNo = 0; colNo < columnCount; ++colNo) {
+        int cellWidth = getConsoleTextLength(row.get(colNo));
+        /* limit cell width if it exceeds MAX_CELL_WIDTH */
+        if (MAX_CELL_WIDTH > 0 && cellWidth > MAX_CELL_WIDTH) {
+            cellWidth = MAX_CELL_WIDTH;
+        }
+        /* expand cell width */
+        if (cellWidth > cellWidthList[colNo]) {
+          cellWidthList[colNo] = cellWidth;
+        }
+      }
+    }
+
+    /**
+     * Get width of text when it display on command line console
+     *
+     * @param text the text to measure
+     * @return width of text in integer value
+     */
+    public int getConsoleTextLength(String text) {
+      return text.codePoints()
+                 .map(c -> getCharacterDisplayWidth(c))
+                 .reduce(0, (sum, x) -> sum + x);
+    }
+
+    /**
+     * Print border of table
+     */
+    private void printBorder() {
+      System.out.println("+" + String.join("+",
+          Stream.of(this.cellWidthList)
+                .map(width -> new String(new char[width+2])
+                                  .replace("\0", "-"))
+                .toArray(String[]::new)) + "+");
+    }
+
+    /**
+     * Print a row in table
+     *
+     * @param row the row to print
+     */
+    private void printRow(ArrayList<String> row) {
+      String line = "|";
+      for (int i = 0; i < columnCount; ++i) {
+        String value = row.get(i);
+        int width = getConsoleTextLength(value);
+        /* fill padding to cell by spaces */
+        String padding = "";
+        if (width < cellWidthList[i]) {
+          padding = CELL_PADDING.substring(0, cellWidthList[i] - width);
+        }
+        String cell = value;
+        if (width > MAX_CELL_WIDTH) {
+          String  cutInfo  = "...";
+          if (MAX_CELL_WIDTH < cutInfo.length()) {
+            cutInfo = cutInfo.substring(0, MAX_CELL_WIDTH);
+          }
+          /* in case of display width of all charactes is 1  */
+          if(value.length() == width) {
+            cell = cell.substring(0, MAX_CELL_WIDTH - cutInfo.length()) + cutInfo;
+          } else {
+            /* calculate the display width of mixed CJK and latin characters,
+              display width of them are different */
+            final int[] charCodes  = value.codePoints().toArray();
+            int displayWidth = 0;
+            int k = 0;
+            for(; k < charCodes.length; k++) {
+              int charWidth = getCharacterDisplayWidth(charCodes[k]);
+              if (displayWidth + charWidth + cutInfo.length() > MAX_CELL_WIDTH) {
+                break;
+              }
+              displayWidth += charWidth;
+            }
+            /* shownChars: the number of characters of display part */
+            final int shownChars = k;
+            /* Extra Dots:
+            Assuming max-width=6, then 'aa米米a' has width = 7 (米=2),
+            will display 'aa....' (6 chars: 2 displayed + 1 extraDots + 3 cutInfo's dots) */
+            String extraDots = "";
+            if (displayWidth < MAX_CELL_WIDTH) {
+              extraDots = new String(new char[MAX_CELL_WIDTH - cutInfo.length() - displayWidth])
+                                .replace("\0", ".");
+            }
+            cell = cell.substring(0, shownChars) + extraDots + cutInfo;
+          }
+        }
+        line += " " + cell + padding + " |";
+      }
+      System.out.println(line);
+    }
+
+    /**
+     * Display the result table
+     */
+    public void display() {
+      printBorder();
+      printRow(columnHeader);
+      printBorder();
+      resultRows.forEach(row -> {
+        printRow(row);
+      });
+      printBorder();
+    }
+  }
+  
   /** Acquire and display query result. */
   private abstract class RowGetter {
 
@@ -2771,6 +2956,11 @@ public class DataCommandClass extends AbstractCommandClass {
                 entry.getStatement());
           }
         }
+
+        if (getResultFormat() == ResultFormat.TABLE) {
+          displayAsTable();
+        }
+        
         return rowNo;
 
       } catch (GSException | IllegalArgumentException e) {
@@ -2788,6 +2978,15 @@ public class DataCommandClass extends AbstractCommandClass {
     public int getRowSQL(Integer count, boolean replaceNull) {
       checkConnectedSQL();
       checkQueriedSQL();
+      
+
+      String[] sqlTokens        = simplifySQL(m_jdbcSQL);
+      boolean  isExplain        = "EXPLAIN".equals(sqlTokens[0]);
+      ResultFormat originFormat = m_resultFormat;
+      /* Change to result format to CSV if SQL is explain */
+      if(isExplain) {
+        m_resultFormat = ResultFormat.CSV;
+      }
 
       int countVal = (count == null) ? Integer.MAX_VALUE : count;
 
@@ -2822,6 +3021,15 @@ public class DataCommandClass extends AbstractCommandClass {
           }
           printLine(1 + rowNo, line);
         }
+        
+        if (getResultFormat() == ResultFormat.TABLE) {
+          displayAsTable();
+        }
+
+        /* Restore orginal display mode after display SQL explain result */
+        if(isExplain) {
+          m_resultFormat = originFormat;
+        }
 
         return rowNo;
 
@@ -2829,6 +3037,9 @@ public class DataCommandClass extends AbstractCommandClass {
         throw new ShellException(getMessage("error.getrow") + " : msg=[" + e.getMessage() + "]", e);
       }
     }
+    
+    protected void displayAsTable() {};
+
   }
 
   /**
@@ -2845,16 +3056,27 @@ public class DataCommandClass extends AbstractCommandClass {
 
     RowGetter rowgetter =
         new RowGetter() {
+          private ResultTable resultTable = null;
           @Override
           protected void printLine(int rowNumber, String... line) {
-            StringBuilder builder = new StringBuilder();
-            for (int i = 0; i < line.length; ++i) {
-              if (i != 0) {
-                builder.append(',');
+            if (getResultFormat() == ResultFormat.CSV) {
+              StringBuilder builder = new StringBuilder();
+              for (int i = 0; i < line.length; ++i) {
+                if (i != 0) {
+                  builder.append(',');
+                }
+                builder.append(line[i]);
               }
-              builder.append(line[i]);
+              println(builder.toString());
+            } else {
+              if (this.resultTable == null) {
+                ArrayList<String> columnNames = new ArrayList<String>(Arrays.asList(line));
+                this.resultTable = new ResultTable(columnNames, getResultMaxColumnWidth());
+              }
+              else {
+                this.resultTable.addRow(new ArrayList<String>(Arrays.asList(line)));
+              }
             }
-            println(builder.toString());
           }
 
           @Override
@@ -2869,6 +3091,14 @@ public class DataCommandClass extends AbstractCommandClass {
             }
             return zdt.format(dateTimeFormatter);
           }
+
+          @Override
+          protected void displayAsTable() {
+            if (this.resultTable != null) {
+              this.resultTable.display();
+            }
+          }
+
         };
 
     int gotCount = 0;
@@ -5958,6 +6188,74 @@ public class DataCommandClass extends AbstractCommandClass {
     }
   }
 
+  /**
+   * The main method for sub-command {@code setresultmaxwidth}.<br>
+   * Set the maximum width for column in query result
+   *
+   * @param width The maximum width of column
+   * @throws ShellException when width is invalid.
+   */
+  @GSCommand(name = "setresultmaxwidth")
+  public void setResultMaxWidth(@GSNullable Integer width) {
+    if (width != null) {
+    	if (width < MIN_COLUMN_WIDTH_LIMIT || width > MAX_COLUMN_WIDTH_LIMIT) {
+        throw new ShellException(getMessage(
+            "error.illegalEnum", width, ": "
+            + MIN_COLUMN_WIDTH_LIMIT + " -> " + MAX_COLUMN_WIDTH_LIMIT));
+      }
+      m_resultMaxWidth = width;
+    } else {
+      m_resultMaxWidth = MAX_COLUMN_WIDTH_DEFAULT;
+    }
+  }
+
+  /**
+   * The main method for sub-command {@code setresultformat}.<br>
+   * Set the format to display the query result
+   *
+   * @param format The format of query result: choose TABLE or CSV.
+   * @throws ShellException when format is invalid.
+   */
+  @GSCommand(name = "setresultformat")
+  public void setResultFormat(@GSNullable String format) {
+    if (format != null) {
+      String resultFormat = format.toUpperCase();
+      try {
+        m_resultFormat = ResultFormat.valueOf(resultFormat);
+      } catch(Exception e) {
+        throw new ShellException(
+            getMessage("error.illegalEnum", format, Arrays.toString(ResultFormat.values())));
+      }
+    } else {
+      m_resultFormat = ResultFormat.TABLE;
+    }
+  }
+
+  private int getResultMaxColumnWidth() {
+    return m_resultMaxWidth != null ? m_resultMaxWidth : MAX_COLUMN_WIDTH_DEFAULT;
+  }
+
+  private ResultFormat getResultFormat() {
+    return m_resultFormat != null ? m_resultFormat : ResultFormat.TABLE;
+  }
+
+  private static String[] simplifySQL(String sql) {
+    String[] sqlTokens = sql.replaceAll("['][^']+[']",    "'_string_'") // simplify SQL string
+                            .replaceAll("[\"][^\"]+[\"]", " _object_ ") // simplify SQL object identifier
+                            .replaceAll("/\\*.*?\\*/",    "")           // remove comment
+                            .replaceAll("--.*$",          "")           // remove comment
+                            .toUpperCase()
+                            .trim()
+                            .split("\\s+");
+    return sqlTokens;
+  }
+
+  private static int getCharacterDisplayWidth(int charCode) {
+      return org.jline.utils.WCWidth.wcwidth(charCode);
+  }
+
+
+  
   private void checkNotificationInterfaceAddressVal(String notificationInterfaceAddress) {
     boolean result = false;
     if (isValidIpAddress(notificationInterfaceAddress)) {
@@ -6013,4 +6311,5 @@ public class DataCommandClass extends AbstractCommandClass {
     }
     return outputIpAddress.substring(0, outputIpAddress.length() - 1);
   }
+
 }
