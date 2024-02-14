@@ -1473,6 +1473,89 @@ Set whether to execute count query when SQL querying.
 [Memo]
 - If FALSE is specified, the response will be faster instead of displaying no hit count. The execution time is not affected by this setting.
 
+
+### Query result display format setting
+
+Set the result display format before executing SQL or TQL statements.
+
+- Sub-command
+
+  |                            |
+  | -------------------------- |
+  | setresultformat \<FORMAT\> |
+
+- Argument
+
+  | Argument   | Note                                 |
+  | ---------- | ------------------------------------ |
+  | FORMAT     | The result format is to be displayed. Can be set to `TABLE` or `CSV`. Default is `TABLE`.|
+
+- Example
+
+  ```example
+  gs[public]> sql SELECT '1+1' AS expr, '2' AS ans;
+  1 results. (4 ms)
+  gs[public]> get
+  +------+-----+
+  | expr | ans |
+  +------+-----+
+  | 1+1  | 2   |
+  +------+-----+
+  The 1 results had been acquired.
+  gs[public]>
+  ```
+
+\[Memo\]
+
+- Display format is always CSV when EXPLAIN is executed.
+
+### Set maximum width for display table
+
+Set the maximum width for column in query result if the format is TABLE.  
+When setting the max width to column, the overflow text will be displayed with three trailing dots `...`.
+
+- Sub-command
+
+  |                             |
+  | --------------------------- |
+  | setresultmaxwidth \<MAX_COLUMN_WIDTH\> |
+
+- Argument
+
+  | Argument          | Note                                                                                                                       |
+  | ----------------- | -------------------------------------------------------------------------------------------------------------------------- |
+  | MAX_COLUMN_WIDTH  | The length of displayed text, including `...` when the text is longer than the setting width. Must be integer (value ≥ 1). Default is 31. |
+
+- Example
+
+  ```example
+  gs[public]> sql SELECT * FROM product;
+  3 results. (44 ms)
+
+  gs[public]> get
+  +--------------------------+-----------------+---------+---------------------------------------------------------+
+  | time                     | name            | weight  | note                                                    |
+  +--------------------------+-----------------+---------+---------------------------------------------------------+
+  | 2023-07-04T07:46:27.415Z | apple           | 9.99    | Envy                                                    |
+  | 2023-07-04T07:47:02.731Z | chia            | 0.1     | Chia seed from Australia                                |
+  | 2023-07-04T07:50:33.437Z | water and light | 0.0     | Hats off to Geoff Adams, who made this mini-documentary |
+  +--------------------------+-----------------+---------+---------------------------------------------------------+
+  The 3 results had been acquired.
+
+  gs[public]> setresultmaxwidth 24
+  gs[public]> sql SELECT * from product;
+  3 results. (44 ms)
+
+  gs[public]> get
+  +--------------------------+-----------------+---------+--------------------------+
+  | time                     | name            | weight  | note                     |
+  +--------------------------+-----------------+---------+--------------------------+
+  | 2023-07-04T07:46:27.415Z | apple           | 9.99    | Envy                     |
+  | 2023-07-04T07:47:02.731Z | chia            | 0.1     | Chia seed from Australia |
+  | 2023-07-04T07:50:33.437Z | water and light | 0.0     | Hats off to Geoff Ada... |
+  +--------------------------+-----------------+---------+--------------------------+
+  The 3 results had been acquired.
+  ```
   
 
 ## Database management

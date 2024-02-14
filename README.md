@@ -11,8 +11,8 @@ The GridDB CLI provides command line interface tool to manage GridDB cluster ope
 Building and program execution are checked in the environment below.
 
     OS: CentOS 7.9(x64)
-    GridDB Server: V5.3 CE(Community Edition)
-    Java: Java™ SE Development Kit 11 (OpenJDK 11.0.19)
+    GridDB Server: V5.5 CE(Community Edition)
+    Java: OpenJDK 1.8.0
 
 ## Quick start from CLI Source Code
 

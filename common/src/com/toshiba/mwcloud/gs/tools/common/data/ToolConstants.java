@@ -17,7 +17,7 @@ package com.toshiba.mwcloud.gs.tools.common.data;
 public class ToolConstants {
 
 	/** メタ情報ファイルフォーマットのバージョン */
-	public static String META_FILE_VERSION = "5.3.0";
+	public static String META_FILE_VERSION = "5.5.0";
 
 
 	/** ロウファイルのタイプ(CSV/バイナリ) */
