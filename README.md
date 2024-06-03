@@ -10,8 +10,8 @@ The GridDB CLI provides command line interface tool to manage GridDB cluster ope
 
 Building and program execution are checked in the environment below.
 
-    OS: CentOS 7.9(x64)
-    GridDB Server: V5.5 CE(Community Edition)
+    OS: CentOS 7.9(x64), Ubuntu 20.04 (x64)
+    GridDB Server: V5.6 CE(Community Edition)
     Java: OpenJDK 1.8.0
 
 ## Quick start from CLI Source Code
@@ -44,10 +44,10 @@ and the following file is created under `release/` folder.
   Run GridDB CLI after build with ant:
 
     $ CP=.
-    $ CP=$CP:common/lib/commons-io-2.4.jar:release/griddb-cli.jar:common/lib/gridstore.jar:common/lib/gridstore-jdbc.jar:common/lib/jackson-annotations-2.2.3.jar:common/lib/jackson-core-2.2.3.jar:common/lib/jackson-databind-2.2.3.jar:common/lib/javax.json-1.0.jar:common/lib/jersey-client-1.17.1.jar:common/lib/jersey-core-1.17.1.jar:common/lib/orion-ssh2-214.jar:lib/commons-beanutils-1.9.3.jar:lib/commons-cli-1.2.jar:lib/commons-collections-3.2.2.jar:lib/commons-lang3-3.5.jar:lib/commons-logging-1.2.jar:lib/jline-3.21.0.jar:lib/logback-classic-1.0.13.jar:lib/logback-core-1.0.13.jar:lib/opencsv-3.9.jar:lib/slf4j-api-1.7.5.jar
+    $ CP=$CP:common/lib/commons-io-2.15.1.jar:release/griddb-cli.jar:common/lib/gridstore.jar:common/lib/gridstore-jdbc.jar:common/lib/jackson-annotations-2.16.1.jar:common/lib/jackson-core-2.16.1.jar:common/lib/jackson-databind-2.16.1.jar:common/lib/javax.json-1.0.jar:common/lib/jersey-client-1.17.1.jar:common/lib/jersey-core-1.17.1.jar:common/lib/orion-ssh2-214.jar:lib/commons-beanutils-1.9.4.jar:lib/commons-cli-1.6.0.jar:lib/commons-collections-3.2.2.jar:lib/commons-lang3-3.14.0.jar:lib/commons-logging-1.3.0.jar:lib/jline-3.21.0.jar:lib/logback-classic-1.2.13.jar:lib/logback-core-1.0.13.jar:lib/opencsv-3.9.jar:lib/slf4j-api-1.7.36.jar
     $ java -Xmx1024m -Dlogback.configurationFile=gs_sh_logback.xml -classpath "$CP:$CLASSPATH"  com.toshiba.mwcloud.gs.tools.shell.GridStoreShell $*
     gs> version
-    gs_sh-ce version 5.0.0
+    gs_sh-ce version 5.6.0
 
   Run GridDB CLI after build with gradle:
 
@@ -55,7 +55,7 @@ and the following file is created under `release/` folder.
     $ CP=$CP:release/griddb-cli.jar
     $ java -Xmx1024m -Dlogback.configurationFile=gs_sh_logback.xml -classpath "$CP:$CLASSPATH"  com.toshiba.mwcloud.gs.tools.shell.GridStoreShell $*
     gs> version
-    gs_sh-ce version 5.0.0
+    gs_sh-ce version 5.6.0
 
 ## Quick start from CLI Package
 
@@ -66,14 +66,14 @@ $ rpm -ivh griddb-X.X.X-linux.x86_64.rpm
 $ rpm -ivh griddb-ce-cli-X.X.X-linux.x86_64.rpm
 $ gs_sh
 gs> version
-gs_sh-ce version 5.0.0
+gs_sh-ce version 5.6.0
 
 (Ubuntu)
 $ dpkg -i griddb_x.x.x_amd64.deb
 $ dpkg -i griddb-cli_X.X.X_amd64.deb
 $ gs_sh
 gs> version
-gs_sh-ce version 5.0.0
+gs_sh-ce version 5.6.0
 
 Note: - X.X.X is the GridDB version.
       - {release} is the GridDB release version.
