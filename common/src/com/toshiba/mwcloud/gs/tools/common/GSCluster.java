@@ -117,6 +117,7 @@ public class GSCluster<T>{
 		this.nodes = new ArrayList<T>(nodes);
 	}
 
+    @SafeVarargs
 	public GSCluster(String clusterName, String multicastAddr, int port, T... nodes) {
 		this(clusterName, multicastAddr, port, Arrays.asList(nodes));
 	}
@@ -139,6 +140,7 @@ public class GSCluster<T>{
 	}
 
 	/** gs_admin リポジトリ用 */
+    @SafeVarargs
 	public GSCluster(String clusterName, String multicastAddr, int port,
 						String jdbcAddr, int jdbcPort, T... nodes){
 		this(clusterName, multicastAddr, port, jdbcAddr, jdbcPort, Arrays.asList(nodes));
