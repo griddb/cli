@@ -102,11 +102,14 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.SortedMap;
+import java.util.TreeMap;
 import java.util.Properties;
 import java.util.Set;
 import java.util.stream.Stream;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import javax.script.Bindings;
 import javax.script.ScriptContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -151,6 +154,7 @@ public class DataCommandClass extends AbstractCommandClass {
   private Query<?> queryObj;
   private RowSet<?> queryRowSet;
   private ShellCluster m_cluster;
+  private String lastTql;
 
   // New SQL (JDBC)
   private Connection m_jdbcCon;
@@ -2382,10 +2386,16 @@ public class DataCommandClass extends AbstractCommandClass {
 
     queryObjClose();
 
+    // expanding variable values within the query
+    if(query.contains("$")){
+      query = replaceVariable(query);
+    }
+
     try {
       queryContainer = gridStore.getContainer(containerName);
       checkContainerExists(containerName, queryContainer);
       queryObj = queryContainer.query(query, null);
+      lastTql = query.trim(); // Preserve the last executed query using the 'tql' subcommand
 
       @SuppressWarnings("deprecation")
       FetchOption fetchOption =
@@ -2406,22 +2416,22 @@ public class DataCommandClass extends AbstractCommandClass {
 
       // オプション指定
       // (設計メモ)オプションによって第2引数の型が変わることに注意する。
-      if (fetchOption.equals(FetchOption.SIZE) || fetchOption.equals(FetchOption.LIMIT)) {
-        // LIMITまたはSIZEの場合、フェッチサイズをintで指定する
-        queryObj.setFetchOption(fetchOption, getFetchSize());
-      } else {
+      if (fetchOption.equals(FetchOption.PARTIAL_EXECUTION)) {
         // PARTIAL_EXECUTIONの場合、trueを指定すると部分実行が有効になる
         queryObj.setFetchOption(fetchOption, true);
+      } else {
+        // LIMITまたはSIZEの場合、フェッチサイズをintで指定する
+        queryObj.setFetchOption(fetchOption, getFetchSize());
       }
 
       long start = System.currentTimeMillis();
       queryRowSet = queryObj.fetch();
       long end = System.currentTimeMillis();
 
-      if (fetchOption.equals(FetchOption.SIZE) || fetchOption.equals(FetchOption.LIMIT)) {
-        println(getMessage("message.hitCount", queryRowSet.size(), end - start));
-      } else {
+      if (fetchOption.equals(FetchOption.PARTIAL_EXECUTION)) {
         println(getMessage("message.selectOnly", end - start));
+      } else {
+        println(getMessage("message.hitCount", queryRowSet.size(), end - start));
       }
 
 
@@ -2476,6 +2486,42 @@ public class DataCommandClass extends AbstractCommandClass {
   }
 
   /**
+   * If the string contains "$variable_name", this method expands the variable's defined value into the string.
+   *
+   * @param str The input string
+   * @return The string after variable replacement
+   */
+  private String replaceVariable(String str) {
+    String replaced = str;
+    SortedMap<String, Object> others = new TreeMap<String, Object>();
+
+     Bindings bindings = getContext().getBindings(ScriptContext.ENGINE_SCOPE);
+     for (Map.Entry<String, Object> e : bindings.entrySet()) {
+       String key = e.getKey();
+       Object val = e.getValue();
+       if (!key.startsWith("__")) {   // Hidden variables are excluded from expansion.
+         if (val instanceof String){  // If the stored value is not a string, it is excluded from expansion.
+           if (val != null){
+             others.put(key, val);
+           }
+         }
+       }
+     }
+
+     for (Map.Entry<String, Object> e : others.entrySet()) {
+       String key = e.getKey();
+       if (!key.equals(GridStoreShell.USER)
+             && !key.equals(GridStoreShell.PASSWORD)
+             && !key.equals(GridStoreShell.OSPASSWORD)) { // Variables set using the setuser subcommand are excluded from expansion.
+         String var = "\\$" + key + "\\b";
+         String val = (String)e.getValue();
+         replaced = replaced.replaceAll(var, val);
+            }
+    }
+    return replaced;
+  }
+
+  /**
    * The main method for sub-command {@code sql}.<br>
    * Execute the SQL.
    *
@@ -2495,6 +2541,11 @@ public class DataCommandClass extends AbstractCommandClass {
 
     queryObjClose();
 
+    // Expand variable values in SQL
+    if(sql.contains("$")){
+      sql = replaceVariable(sql);
+    }
+
     try {
       sql = sql.trim();
       if (sql.length() == 0) {
@@ -2502,7 +2553,6 @@ public class DataCommandClass extends AbstractCommandClass {
       }
 
       m_jdbcStmt = m_jdbcCon.createStatement();
-      m_jdbcSQL  = sql;
 
       String sqlCheckStr = sql.replaceAll("/\\*[^\\*]*\\*/", " ");
       sqlCheckStr = (sqlCheckStr.replaceAll("--.*(\r\n|\n)", " ")).trim();
@@ -2526,6 +2576,7 @@ public class DataCommandClass extends AbstractCommandClass {
         long start = System.currentTimeMillis();
         m_jdbcRS = m_jdbcStmt.executeQuery(sql);
         long end = System.currentTimeMillis();
+        m_jdbcSQL = sql; // サブコマンドsqlで最後に実行したクエリを退避（変数値は展開済）
 
         int count = -1;
         if (isSqlCount()) {
@@ -2877,12 +2928,39 @@ public class DataCommandClass extends AbstractCommandClass {
      * @return number acquired rows
      */
     public int getRow(Integer count, boolean replaceNull) {
+      return getRow(count, replaceNull, null);
+    }
+
+    /**
+     * 検索結果を取得します。（NoSQL）
+     *
+     * @param count 取得するレコードの最大数（getvalからの呼び出し時は1）
+     * @param replaceNull NULL値を文字列に置き換えるかどうかを示すフラグ（getvalからの呼び出し時はfalse）
+     * @param vals カラム値を格納する配列（getvalからの呼び出し時のみ指定、getからの呼び出し時はnull）
+     * @return 取得行数
+     */
+    private int getRow(Integer count, boolean replaceNull, String[] vals) {
       checkConnected();
       checkQueried();
 
       int countVal = (count == null) ? Integer.MAX_VALUE : count;
 
       try {
+        ContainerInfo schema = queryRowSet.getSchema();
+        int colCount = schema.getColumnCount();
+
+        if(vals != null){
+          // getval
+          if(lastTql.matches("(?i)^explain .*")){
+            // EXPLAIN文は対象外 → エラー
+            throw new ShellException(getMessage("error.getvalExplain"));
+          }
+          if(vals.length > colCount){
+            // 引数に指定した変数名がカラム数より多い → エラー
+            throw new ShellException(getMessage("error.tooManyVariables"));
+          }
+        }
+
         int rowNo;
         for (rowNo = 0; rowNo < countVal; ++rowNo) {
           if (!queryRowSet.hasNext()) {
@@ -2894,77 +2972,127 @@ public class DataCommandClass extends AbstractCommandClass {
 
           if (obj instanceof Row) {
             Row row = (Row) obj;
-            ContainerInfo schema = row.getSchema();
-            int colCount = schema.getColumnCount();
-            String[] line = new String[colCount];
+            String[] line = null;
 
-            if (rowNo == 0) {
-              for (int colNo = 0; colNo < colCount; ++colNo) {
-                line[colNo] = schema.getColumnInfo(colNo).getName();
+            if(vals == null){
+              // get
+              line = new String[colCount];
+              // 1行目はカラム名を出力
+              if (rowNo == 0) {
+                for (int colNo = 0; colNo < colCount; ++colNo) {
+                  line[colNo] = schema.getColumnInfo(colNo).getName();
+                }
+                printLine(0, line);
               }
-              printLine(0, line);
             }
 
             for (int colNo = 0; colNo < colCount; ++colNo) {
+              if(vals != null){
+                // getval：格納配列数を超過した場合、取得中断
+                if(colNo >= vals.length){
+                  break;
+                }
+              }
               ColumnInfo ci = schema.getColumnInfo(colNo);
               Object data   = row.getValue(colNo);
+              String line_wk;
               if(data instanceof Timestamp) {
-                line[colNo] = stringify((Timestamp)   data, ci.getTimePrecision());
+                line_wk = stringify((Timestamp)   data, ci.getTimePrecision());
               } else {
-                line[colNo] = stringify(data, replaceNull);
+                line_wk = stringify(data, replaceNull);
+              }
+              if(vals == null){
+                // get
+                line[colNo] = line_wk;
+              } else {
+                // getval
+                vals[colNo] = line_wk;
               }
             }
-            printLine(1 + rowNo, line);
+            if(vals == null){
+              // get
+              printLine(1 + rowNo, line);
+            }
 
           } else if (obj instanceof AggregationResult) {
             AggregationResult agg = (AggregationResult) obj;
 
-            if (rowNo == 0) {
-              printLine(0, "Result");
+            if(vals == null){
+              // get：1行目はカラム名を出力
+              if (rowNo == 0) {
+                printLine(0, "Result");
+              }
             }
 
             Double number = agg.getDouble();
             if (number != null) {
-              printLine(1 + rowNo, stringify(number, replaceNull));
+              if(vals == null){
+                // get
+                printLine(1 + rowNo, stringify(number, replaceNull));
+              } else {
+                // getval
+                vals[0] = stringify(number, replaceNull);
+              }
             } else {
-              ContainerInfo contInfo =  queryRowSet.getSchema();
-              // AggregationResult has only 1 column
-              TimeUnit precision = contInfo.getColumnInfo(0).getTimePrecision();
+              TimeUnit precision = schema.getColumnInfo(0).getTimePrecision();
               String line;
               if (precision == TimeUnit.MICROSECOND || precision == TimeUnit.NANOSECOND) {
                 line = stringify(agg.getPreciseTimestamp(), precision);
               } else {
                 line = stringify(agg.getTimestamp(), replaceNull);
               }
-              printLine(1 + rowNo, line);
+              if(vals == null){
+                // get
+                printLine(1 + rowNo, line);
+              } else {
+                // getval
+                vals[0] = line;
+              }
             }
 
           } else if (obj instanceof QueryAnalysisEntry) {
-            QueryAnalysisEntry entry = (QueryAnalysisEntry) obj;
+            /* EXPLAIN結果 */
+            if(vals == null){
+              // get
+              QueryAnalysisEntry entry = (QueryAnalysisEntry) obj;
 
-            if (rowNo == 0) {
-              printLine(0, "Id", "Depth", "Type", "ValueType", "Value", "Statement");
+              // 最初ならカラム名の表示
+              if (rowNo == 0) {
+                printLine(0, "Id", "Depth", "Type", "ValueType", "Value", "Statement");
+              }
+
+              // データの表示
+              printLine(
+                  1 + rowNo,
+                  stringify(entry.getId(), replaceNull),
+                  stringify(entry.getDepth(), replaceNull),
+                  entry.getType(),
+                  entry.getValueType(),
+                  entry.getValue(),
+                  entry.getStatement());
             }
-
-            printLine(
-                1 + rowNo,
-                stringify(entry.getId(), replaceNull),
-                stringify(entry.getDepth(), replaceNull),
-                entry.getType(),
-                entry.getValueType(),
-                entry.getValue(),
-                entry.getStatement());
           }
         }
 
-        if (getResultFormat() == ResultFormat.TABLE) {
-          displayAsTable();
+        if(vals == null){
+          // get
+          if (getResultFormat() == ResultFormat.TABLE) {
+            displayAsTable();
+          }
         }
-        
+
         return rowNo;
 
+      } catch (ShellException e) {
+        throw e;
       } catch (GSException | IllegalArgumentException e) {
-        throw new ShellException(getMessage("error.getrow") + " : msg=[" + e.getMessage() + "]", e);
+        if(vals == null){
+          // get
+          throw new ShellException(getMessage("error.getrow") + " : msg=[" + e.getMessage() + "]", e);
+        } else {
+          // getval
+          throw new ShellException(getMessage("error.getrowval") + " : msg=[" + e.getMessage() + "]", e);
+        }
       }
     }
 
@@ -2976,6 +3104,18 @@ public class DataCommandClass extends AbstractCommandClass {
      * @return number acquired rows
      */
     public int getRowSQL(Integer count, boolean replaceNull) {
+      return getRowSQL(count, replaceNull, null);
+    }
+
+    /**
+     * 検索結果を取得します。（SQL）
+     *
+     * @param count 取得するレコードの最大数（getvalからの呼び出し時は1）
+     * @param replaceNull NULL値を文字列に置き換えるかどうかを示すフラグ（getvalからの呼び出し時はfalse）
+     * @param vals カラム値を格納する配列（getvalからの呼び出し時のみ指定、getからの呼び出し時はnull）
+     * @return 取得行数
+     */
+    private int getRowSQL(Integer count, boolean replaceNull, String[] vals) {
       checkConnectedSQL();
       checkQueriedSQL();
       
@@ -2985,7 +3125,14 @@ public class DataCommandClass extends AbstractCommandClass {
       ResultFormat originFormat = m_resultFormat;
       /* Change to result format to CSV if SQL is explain */
       if(isExplain) {
-        m_resultFormat = ResultFormat.CSV;
+        if(vals == null){
+          // get
+          m_resultFormat = ResultFormat.CSV;
+        } else {
+          // getval
+          // EXPLAIN文は対象外 → エラー
+          throw new ShellException(getMessage("error.getvalExplain"));
+        }
       }
 
       int countVal = (count == null) ? Integer.MAX_VALUE : count;
@@ -2994,12 +3141,24 @@ public class DataCommandClass extends AbstractCommandClass {
         int rowNo;
         ResultSetMetaData rsMeta = m_jdbcRS.getMetaData();
         int colCount = rsMeta.getColumnCount();
-        String[] line = new String[colCount];
-
-        for (int colNo = 0; colNo < colCount; ++colNo) {
-          line[colNo] = rsMeta.getColumnName(colNo + 1);
+        if(vals != null){
+          // getval
+          if(vals.length > colCount){
+            // 引数に指定した変数名がカラム数より多い → エラー
+            throw new ShellException(getMessage("error.tooManyVariables"));
+          }
         }
-        printLine(0, line);
+
+        String[] line = null;
+        if(vals == null){
+          // get
+          line = new String[colCount];
+          // 1行目はカラム名を出力
+          for (int colNo = 0; colNo < colCount; ++colNo) {
+            line[colNo] = rsMeta.getColumnName(colNo + 1);
+          }
+          printLine(0, line);
+        }
 
         for (rowNo = 0; rowNo < countVal; ++rowNo) {
           if (!m_jdbcRS.next()) {
@@ -3009,36 +3168,83 @@ public class DataCommandClass extends AbstractCommandClass {
           }
 
           for (int colNo = 0; colNo < colCount; ++colNo) {
+            if(vals != null){
+              // getval：格納配列数を超過した場合、取得中断
+              if(colNo >= vals.length){
+                break;
+              }
+            }
             Object obj = m_jdbcRS.getObject(colNo + 1);
-
+            String line_wk;
             if (obj == null || m_jdbcRS.wasNull()) {
-              line[colNo] = replaceNull ? getNullStdOut() : null;
+              line_wk = replaceNull ? getNullStdOut() : null;
             } else if (obj instanceof Blob) {
-              line[colNo] = BLOB_SHOW_STRING;
+              line_wk = BLOB_SHOW_STRING; // blobはダミー文字列"(BLOB)"で代用
             } else {
-              line[colNo] = m_jdbcRS.getString(colNo + 1);
+              line_wk = m_jdbcRS.getString(colNo + 1);
+            }
+            if(vals == null){
+              // get
+              line[colNo] = line_wk;
+            } else {
+              // getval
+              vals[colNo] = line_wk;
             }
           }
-          printLine(1 + rowNo, line);
+          if(vals == null){
+            // get
+            printLine(1 + rowNo, line);
+          }
         }
         
-        if (getResultFormat() == ResultFormat.TABLE) {
-          displayAsTable();
-        }
+        if(vals == null){
+          // get
+          if (getResultFormat() == ResultFormat.TABLE) {
+            displayAsTable();
+          }
 
-        /* Restore orginal display mode after display SQL explain result */
-        if(isExplain) {
-          m_resultFormat = originFormat;
+          /* Restore orginal display mode after display SQL explain result */
+          if(isExplain) {
+            m_resultFormat = originFormat;
+          }
         }
 
         return rowNo;
 
+      } catch (ShellException e) {
+        throw e;
       } catch (Exception e) {
-        throw new ShellException(getMessage("error.getrow") + " : msg=[" + e.getMessage() + "]", e);
+        if(vals == null){
+          // get
+          throw new ShellException(getMessage("error.getrow") + " : msg=[" + e.getMessage() + "]", e);
+        } else {
+          // getval
+          throw new ShellException(getMessage("error.getrowval") + " : msg=[" + e.getMessage() + "]", e);
+        }
       }
     }
-    
+
     protected void displayAsTable() {};
+
+    /**
+     * 検索結果1件を取得し、カラム値を取得します。（NoSQL）
+     *
+     * @param vals カラム値を格納する配列
+     * @return 取得件数
+     */
+    public int getRowVal(String[] vals) {
+      return getRow(1, false, vals);
+    }
+
+    /**
+     * 検索結果1件を取得し、カラム値を取得します。（SQL）
+     *
+     * @param vals カラム値を格納する配列
+     * @return 取得件数
+     */
+    public int getRowValSQL(String[] vals) {
+      return getRowSQL(1, false, vals);
+    }
 
   }
 
@@ -3239,6 +3445,91 @@ public class DataCommandClass extends AbstractCommandClass {
     } catch (Exception e) {
       throw new ShellException(
           getMessage("error.getnoprint") + " : msg=[" + e.getMessage() + "]", e);
+    }
+  }
+
+  /**
+   * サブコマンド{@code getval}のメインメソッド。<br>
+   * クエリの実行結果を変数に設定します。
+   *
+   * @param varNames カラム値を設定する変数名
+   * @throws ShellException サブコマンドの引数の指定がない場合
+   * @throws ShellException DBに未接続の場合、またはクエリの実行実績がない場合
+   * @throws ShellException EXPLAIN文の実行結果を取得しようとした場合
+   * @throws ShellException getvalサブコマンドの引数に指定した変数名の数が実行結果のカラム数より大きい場合
+   * @throws ShellException 上記以外の検索処理において例外が発生した場合
+   */
+  @GSCommand(name = "getval", assignall = true)
+  public void getRowAndSetVariable(String... varNames) {
+    if (varNames.length == 0) {
+      // 引数の指定なし → エラー
+      throw new ShellException(getMessage("error.missingArgument"));
+    }
+
+    final DateTimeFormatter dateTimeFormatter =
+        DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX");
+
+    RowGetter rowgetter =
+        new RowGetter() {
+          @Override
+          protected void printLine(int rowNumber, String... line) {
+          }
+
+          @Override
+          protected String formatDate(Date date) {
+            // V4.3 タイムゾーン付きのStringに変換
+            ZonedDateTime zdt = null;
+            if (m_connectTimeZoneVal == null) {
+              // タイムゾーン設定がない場合はUTC
+              zdt = ZonedDateTime.ofInstant(date.toInstant(), ZoneId.of("UTC"));
+            } else if ("auto".equals(m_connectTimeZoneVal)) {
+              // タイムゾーン設定がautoの場合はシステムデフォルト
+              zdt = ZonedDateTime.ofInstant(date.toInstant(), ZoneId.systemDefault());
+            } else {
+              // タイムゾーン設定がある場合は設定値を反映
+              zdt = ZonedDateTime.ofInstant(date.toInstant(), ZoneOffset.of(m_connectTimeZoneVal));
+            }
+            return zdt.format(dateTimeFormatter);
+          }
+        };
+
+    List<String> listVarNames = getListColumnValuesSplit(varNames[0]);
+    int varCount = listVarNames.size();
+    String[] vals = new String[varCount];
+
+    // 変数名のチェック
+    for (int i = 0; i < varCount; i++) {
+      String varname = listVarNames.get(i);
+      if (!varname.matches("^[0-9a-zA-Z_]+$")) {
+        throw new ShellException(getMessage("error.invalidVarName", varname));
+      }
+      else if (varname.length() > 256) {
+        throw new ShellException(getMessage("error.longVariableName"));
+      }
+    }
+
+    // カラム値の取得
+    int rowCount = 0;
+    if (queryRowSet != null) {
+      rowCount = rowgetter.getRowVal(vals);
+    } else if (m_jdbcRS != null) {
+      rowCount = rowgetter.getRowValSQL(vals);
+    } else {
+      // クエリの実行実績なし → エラー
+      throw new ShellException(getMessage("error.noResultSet"));
+    }
+
+    // 変数に設定
+    BasicCommandClass basic = new BasicCommandClass();
+    for (int i = 0; i < vals.length; i++) {
+      basic.setVariable(listVarNames.get(i), vals[i]); // nullの場合は、変数をクリア
+    }
+
+    // 取得メッセージ出力
+    if(rowCount == 0){
+      println(getMessage("message.getval0"));  // 0件
+    } else {
+      println(getMessage("message.getval1"));  // 1件
     }
   }
 
@@ -5273,19 +5564,48 @@ public class DataCommandClass extends AbstractCommandClass {
       query = eventContainer.query(ToolConstants.TQL_SELECT_META_EVENT_INFO);
       rowSet = query.fetch();
       while (rowSet.hasNext()) {
+        String nodeAddress = null;
+        String applicationName = null;
+        String serviceType = null;
+        String eventType = null;
+        String workerId = null;
+        int nodePort = 0;
+        int clusterPartitionId = 0;
+        Date startTime = null;
+        
         Row row = rowSet.next();
-        String nodeAddress = row.getString(ToolConstants.META_TABLE_EVENT_INFO_NODE_ADDRESS_IDX);
-        int nodePort = row.getInteger(ToolConstants.META_TABLE_EVENT_INFO_NODE_PORT_IDX);
-        Date startTime = (Date) row.getValue(ToolConstants.META_TABLE_EVENT_INFO_START_TIME_IDX);
-
-        String applicationName =
-            row.getString(ToolConstants.META_TABLE_EVENT_INFO_APPLICATION_NAME_IDX);
-        String serviceType = row.getString(ToolConstants.META_TABLE_EVENT_SERVICE_TYPE_IDX);
-        String eventType = row.getString(ToolConstants.META_TABLE_EVENT_EVENT_TYPE_IDX);
-        String workerId =
-            Integer.toString(row.getInteger(ToolConstants.META_TABLE_EVENT_WORKER_ID_IDX));
-        int clusterPartitionId =
-            row.getInteger(ToolConstants.META_TABLE_EVENT_CLUSTER_PARTITION_ID_IDX);
+        ContainerInfo schema = row.getSchema();
+        int colCount = schema.getColumnCount();
+        for(int colNo = 0; colNo < colCount; ++colNo) {
+          switch (schema.getColumnInfo(colNo).getName().toUpperCase()) {
+            case ToolConstants.META_TABLE_EVENT_INFO_NODE_ADDRESS:
+            	nodeAddress = row.getString(colNo);
+              break;
+            case ToolConstants.META_TABLE_EVENT_INFO_NODE_PORT:
+            	nodePort = row.getInteger(colNo);
+              break;
+            case ToolConstants.META_TABLE_EVENT_INFO_START_TIME:
+            	startTime = (Date) row.getValue(colNo);
+              break;
+            case ToolConstants.META_TABLE_EVENT_INFO_APPLICATION_NAME:
+            	applicationName = row.getString(colNo);
+              break;
+            case ToolConstants.META_TABLE_EVENT_SERVICE_TYPE:
+            	serviceType = row.getString(colNo);
+              break;
+            case ToolConstants.META_TABLE_EVENT_EVENT_TYPE:
+            	eventType = row.getString(colNo);
+              break;
+            case ToolConstants.META_TABLE_EVENT_WORKER_ID:
+            	workerId = Integer.toString(row.getInteger(colNo));
+              break;
+            case ToolConstants.META_TABLE_EVENT_CLUSTER_PARTITION_ID:
+            	clusterPartitionId = row.getInteger(colNo);
+              break;
+            default:
+              break;
+          }
+        }
 
         EventInfo eventInfo =
             new EventInfo(
@@ -5410,26 +5730,54 @@ public class DataCommandClass extends AbstractCommandClass {
       }
       query = connectionContainer.query(ToolConstants.TQL_SELECT_META_CONNECTION_INFO);
       rowSet = query.fetch();
+      String serviceType = null;
+      String socketType = null;
+      String nodeAddress = null;
+      String remoteAddress = null;
+      String applicationName = null;
+      int nodePort = 0, remotePort = 0;
+      long dispatchingEventCount = 0, sendingEventCount = 0;
+      Date creationTime = null;
       while (rowSet.hasNext()) {
         Row row = rowSet.next();
-        String serviceType =
-            row.getString(ToolConstants.META_TABLE_CONNECTION_INFO_SERVICE_TYPE_IDX);
-        String socketType = row.getString(ToolConstants.META_TABLE_CONNECTION_INFO_SOCKET_TYPE_IDX);
-        String nodeAddress =
-            row.getString(ToolConstants.META_TABLE_CONNECTION_INFO_NODE_ADDRESS_IDX);
-        int nodePort = row.getInteger(ToolConstants.META_TABLE_CONNECTION_INFO_NODE_PORT_IDX);
-        String remoteAddress =
-            row.getString(ToolConstants.META_TABLE_CONNECTION_INFO_REMOTE_ADDRESS_IDX);
-        int remotePort = row.getInteger(ToolConstants.META_TABLE_CONNECTION_INFO_REMOTE_PORT_IDX);
-        String applicationName =
-            row.getString(ToolConstants.META_TABLE_CONNECTION_INFO_APPLICATION_NAME_IDX);
-        Date creationTime =
-            (Date) row.getValue(ToolConstants.META_TABLE_CONNECTION_INFO_CREATION_TIME_IDX);
-        long dispatchingEventCount =
-            row.getLong(ToolConstants.META_TABLE_CONNECTION_INFO_DISPATCHING_EVENT_COUNT_IDX);
-        long sendingEventCount =
-            row.getLong(ToolConstants.META_TABLE_CONNECTION_INFO_SENDING_EVENT_COUNT_IDX);
-
+        ContainerInfo schema = row.getSchema();
+        int colCount = schema.getColumnCount();
+        for(int colNo = 0; colNo < colCount; ++colNo) {
+          switch (schema.getColumnInfo(colNo).getName().toUpperCase()) {
+            case ToolConstants.META_TABLE_CONNECTION_INFO_SERVICE_TYPE:
+              serviceType = row.getString(colNo);
+              break;
+            case ToolConstants.META_TABLE_CONNECTION_INFO_SOCKET_TYPE:
+              socketType = row.getString(colNo);
+              break;
+            case ToolConstants.META_TABLE_CONNECTION_INFO_NODE_ADDRESS:
+              nodeAddress = row.getString(colNo);
+              break;
+            case ToolConstants.META_TABLE_CONNECTION_INFO_NODE_PORT:
+              nodePort = row.getInteger(colNo);
+              break;
+            case ToolConstants.META_TABLE_CONNECTION_INFO_REMOTE_ADDRESS:
+              remoteAddress = row.getString(colNo);
+              break;
+            case ToolConstants.META_TABLE_CONNECTION_INFO_REMOTE_PORT:
+              remotePort = row.getInteger(colNo);
+              break;
+            case ToolConstants.META_TABLE_CONNECTION_INFO_APPLICATION_NAME:
+              applicationName = row.getString(colNo);
+              break;
+            case ToolConstants.META_TABLE_CONNECTION_INFO_CREATION_TIME:
+              creationTime = (Date) row.getValue(colNo);
+              break;
+            case ToolConstants.META_TABLE_CONNECTION_INFO_DISPATCHING_EVENT_COUNT:
+              dispatchingEventCount = row.getLong(colNo);
+              break;
+            case ToolConstants.META_TABLE_CONNECTION_INFO_SENDING_EVENT_COUNT:
+              sendingEventCount = row.getLong(colNo);
+              break;
+            default:
+              break;
+          }
+        }
         ConnectionInfo connInfo =
             new ConnectionInfo(
                 serviceType,

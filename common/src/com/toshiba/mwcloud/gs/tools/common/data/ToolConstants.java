@@ -17,7 +17,7 @@ package com.toshiba.mwcloud.gs.tools.common.data;
 public class ToolConstants {
 
 	/** メタ情報ファイルフォーマットのバージョン */
-	public static String META_FILE_VERSION = "5.5.0";
+	public static String META_FILE_VERSION = "5.6.0";
 
 
 	/** ロウファイルのタイプ(CSV/バイナリ) */
@@ -467,28 +467,28 @@ public class ToolConstants {
 	/*
 	 * メタテーブル#events のカラムインデックス
 	 */
-	public static final int META_TABLE_EVENT_INFO_NODE_ADDRESS_IDX = 0;
-	public static final int META_TABLE_EVENT_INFO_NODE_PORT_IDX = 1;
-	public static final int META_TABLE_EVENT_INFO_START_TIME_IDX = 2;
-	public static final int META_TABLE_EVENT_INFO_APPLICATION_NAME_IDX = 3;
-	public static final int META_TABLE_EVENT_SERVICE_TYPE_IDX = 4;
-	public static final int META_TABLE_EVENT_EVENT_TYPE_IDX = 5;
-	public static final int META_TABLE_EVENT_WORKER_ID_IDX = 6;
-	public static final int META_TABLE_EVENT_CLUSTER_PARTITION_ID_IDX = 7;
+	public static final String META_TABLE_EVENT_INFO_NODE_ADDRESS = "NODE_ADDRESS";
+	public static final String META_TABLE_EVENT_INFO_NODE_PORT= "NODE_PORT";
+	public static final String META_TABLE_EVENT_INFO_START_TIME = "START_TIME";
+	public static final String META_TABLE_EVENT_INFO_APPLICATION_NAME = "APPLICATION_NAME";
+	public static final String META_TABLE_EVENT_SERVICE_TYPE = "SERVICE_TYPE";
+	public static final String META_TABLE_EVENT_EVENT_TYPE = "EVENT_TYPE";
+	public static final String META_TABLE_EVENT_WORKER_ID = "WORKER_INDEX";
+	public static final String META_TABLE_EVENT_CLUSTER_PARTITION_ID = "CLUSTER_PARTITION_INDEX";
 
 	/*
 	 * メタテーブル#sockets のカラムインデックス
 	 */
-	public static final int META_TABLE_CONNECTION_INFO_SERVICE_TYPE_IDX = 0;
-	public static final int META_TABLE_CONNECTION_INFO_SOCKET_TYPE_IDX = 1;
-	public static final int META_TABLE_CONNECTION_INFO_NODE_ADDRESS_IDX = 2;
-	public static final int META_TABLE_CONNECTION_INFO_NODE_PORT_IDX = 3;
-	public static final int META_TABLE_CONNECTION_INFO_REMOTE_ADDRESS_IDX = 4;
-	public static final int META_TABLE_CONNECTION_INFO_REMOTE_PORT_IDX = 5;
-	public static final int META_TABLE_CONNECTION_INFO_APPLICATION_NAME_IDX = 6;
-	public static final int META_TABLE_CONNECTION_INFO_CREATION_TIME_IDX = 7;
-	public static final int META_TABLE_CONNECTION_INFO_DISPATCHING_EVENT_COUNT_IDX = 8;
-	public static final int META_TABLE_CONNECTION_INFO_SENDING_EVENT_COUNT_IDX = 9;
+	public static final String META_TABLE_CONNECTION_INFO_SERVICE_TYPE = "SERVICE_TYPE";
+	public static final String META_TABLE_CONNECTION_INFO_SOCKET_TYPE = "SOCKET_TYPE";
+	public static final String META_TABLE_CONNECTION_INFO_NODE_ADDRESS = "NODE_ADDRESS";
+	public static final String META_TABLE_CONNECTION_INFO_NODE_PORT = "NODE_PORT";
+	public static final String META_TABLE_CONNECTION_INFO_REMOTE_ADDRESS = "REMOTE_ADDRESS";
+	public static final String META_TABLE_CONNECTION_INFO_REMOTE_PORT = "REMOTE_PORT";
+	public static final String META_TABLE_CONNECTION_INFO_APPLICATION_NAME = "APPLICATION_NAME";
+	public static final String META_TABLE_CONNECTION_INFO_CREATION_TIME = "CREATION_TIME";
+	public static final String META_TABLE_CONNECTION_INFO_DISPATCHING_EVENT_COUNT = "DISPATCHING_EVENT_COUNT";
+	public static final String META_TABLE_CONNECTION_INFO_SENDING_EVENT_COUNT = "SENDING_EVENT_COUNT";
 
 	/*
 	 * メタテーブル#views のカラムインデックス

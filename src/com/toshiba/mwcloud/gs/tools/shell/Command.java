@@ -160,7 +160,12 @@ public class Command {
 
     Object[] args = new Object[tokens.length];
     for (int i = 0; i < tokens.length; ++i) {
-      if (tokens[i].startsWith("$")) {
+      if (tokens[i].startsWith("$") && !tokens[i].contains(" ") ) { // Variables (If the variable name contains spaces, consider it part of the SQL statement and exclude it).
+        // For the getval, set, and show subcommands, the first argument (variable name) is not expanded as a variable.
+        if(i==0 && (this.name.equals("getval") || this.name.equals("set") || this.name.equals("show"))){
+          args[i] = tokens[i];
+          continue;
+        }
         String varName = tokens[i].substring(1);
 
         args[i] = context.getAttribute(varName);
