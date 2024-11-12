@@ -113,6 +113,7 @@ import javax.script.Bindings;
 import javax.script.ScriptContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import java.lang.OutOfMemoryError;
 
 /** Data command class contains some commands to execute data operation. */
 public class DataCommandClass extends AbstractCommandClass {
@@ -3211,6 +3212,9 @@ public class DataCommandClass extends AbstractCommandClass {
 
         return rowNo;
 
+      } catch (OutOfMemoryError oome) {
+        removeResultTable();
+        throw new ShellException(getMessage("error.outOfMemory"));
       } catch (ShellException e) {
         throw e;
       } catch (Exception e) {
@@ -3225,6 +3229,7 @@ public class DataCommandClass extends AbstractCommandClass {
     }
 
     protected void displayAsTable() {};
+    protected void removeResultTable() {};
 
     /**
      * 検索結果1件を取得し、カラム値を取得します。（NoSQL）
@@ -3304,7 +3309,9 @@ public class DataCommandClass extends AbstractCommandClass {
               this.resultTable.display();
             }
           }
-
+          protected void removeResultTable() {
+            this.resultTable = null;
+          }
         };
 
     int gotCount = 0;
@@ -5348,7 +5355,7 @@ public class DataCommandClass extends AbstractCommandClass {
     for (JsonNode explainJson : explainJsonList) {
       explains.add(explainJson);
     }
-    root.put("nodeList", explains);
+    root.set("nodeList", explains);
 
     String outputStr = "";
     try {
