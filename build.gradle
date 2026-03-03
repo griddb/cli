@@ -15,8 +15,8 @@ sourceSets {
     }
 }
 
-def gridstoreVersion = '5.8.0'
-def gridstoreJdbcVersion = '5.8.0'
+def gridstoreVersion = '5.9.0'
+def gridstoreJdbcVersion = '5.9.0'
 
 repositories {
     mavenCentral()
