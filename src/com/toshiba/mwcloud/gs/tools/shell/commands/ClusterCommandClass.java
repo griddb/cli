@@ -383,7 +383,11 @@ public class ClusterCommandClass extends AbstractCommandClass {
           throw new ShellException(
               getMessage("error.someNodesNotStopped", errorCount, watchers.size()));
         } else {
-          println(getMessage("message.allNodesStopped"));
+          if (nodes.length == 1) {
+            println(getMessage("message.nodeStopped", nodes[0].getName()));
+          } else {
+            println(getMessage("message.allNodesStopped"));
+          }
         }
       } else {
         println(getMessage("error.timeout"));
