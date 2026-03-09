@@ -25,6 +25,7 @@ import java.io.Writer;
 import java.nio.file.Paths;
 import java.text.MessageFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.ListIterator;
@@ -53,6 +54,8 @@ import org.jline.reader.impl.DefaultParser;
 import org.jline.reader.impl.completer.ArgumentCompleter;
 import org.jline.reader.impl.completer.StringsCompleter;
 import org.jline.reader.impl.history.DefaultHistory;
+import org.jline.reader.EOFError;
+import org.jline.reader.ParsedLine;
 import org.jline.terminal.Size;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
@@ -186,7 +189,7 @@ public class GridStoreScriptEngine extends AbstractScriptEngine {
                 .terminal(terminal)
                 .option(Option.BRACKETED_PASTE, false)
                 .option(Option.HISTORY_IGNORE_SPACE, false)
-                .parser(new DefaultParser())
+                .parser(new CustomParser())
                 .history(new DefaultHistory())
                 .completer(new ArgumentCompleter(completors))
                 .build();
@@ -297,6 +300,39 @@ public class GridStoreScriptEngine extends AbstractScriptEngine {
     }
   }
 
+  // multi input support 
+  private class CustomParser extends DefaultParser {
+
+    @Override
+    public ParsedLine parse(String line, int cursor, ParseContext context) {
+      String[] needEndList = {
+                              "tql",
+                              "sql",
+                              "select",
+                              "insert",
+                              "update",
+                              "delete",
+                              "create",
+                              "alter",
+                              "set password",
+                              "drop",
+                              "grant",
+                              "revoke",
+                              "tqlexplain",
+                              "tqlanlyze"
+                             };
+      if (context == ParseContext.ACCEPT_LINE) {
+        String[] checkCommand = line.trim().split(" ");
+        if (Arrays.asList(needEndList).contains(checkCommand[0].toLowerCase())) {
+          if (!line.trim().endsWith(";")) {
+            throw new EOFError(-1, -1, "not end of statement");
+          }
+        }
+      }
+      return super.parse(line, cursor, context);
+    }
+  }
+ 
   private String readAdditionalLines(BufferedReader bufferedReader, String firstLine)
       throws IOException {
     StringBuilder builder = new StringBuilder(firstLine);
